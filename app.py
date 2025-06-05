@@ -64,6 +64,10 @@ def upload_file():
 
         df = pd.read_excel(file_path)
         df.columns = [col.strip() for col in df.columns]
+
+        # Filter out the rows where DueDateStatus is "Not Approved"
+        df = df[df['DueDateStatus'] == 'Approved']
+
         grouped = df.groupby("Document Number")
 
         for f in os.listdir(OUTPUT_FOLDER):
@@ -152,7 +156,7 @@ def upload_file():
             value_width = 190 - label_width
             pdf.cell(label_width, 8, "LOGO SKU:", border=1, align="C")
             pdf.set_font("Arial", "", 10)
-            logo_value = truncate_text(safe_get(group["LOGO"].iloc[0]), pdf, value_width * 0.98)
+            logo_value = str(int(float(safe_get(group["LOGO"].iloc[0]))))
             pdf.cell(value_width, 8, logo_value, border=1)
             pdf.ln(10)
 
