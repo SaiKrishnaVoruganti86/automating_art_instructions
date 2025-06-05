@@ -1,3 +1,2 @@
-# Ignore output and upload directories
-outputs/
-uploads/
+/outputs/
+/uploads/
