@@ -169,7 +169,6 @@ def upload_file():
                     zipf.write(os.path.join(OUTPUT_FOLDER, fname), fname)
 
         return redirect(url_for("download_file"))
-
     return render_template("upload.html")
 
 @app.route("/download")
