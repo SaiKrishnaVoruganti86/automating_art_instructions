@@ -149,6 +149,21 @@ def upload_file():
             pdf.cell(QTY_WIDTH, 8, str(int(total_qty)), 1, align="C")
             pdf.ln(2)
 
+            # ➕ Add 1cm gap before LOGO POSITION and NOTES row
+            pdf.ln(10)  # 1cm gap
+
+            # ➕ LOGO POSITION and NOTES row
+            pdf.set_font("Arial", "B", 10)
+            logo_position_value = safe_get(group["LOGO POSITION"].iloc[0]) if 'LOGO POSITION' in group.columns else ""
+            notes_value = safe_get(group["NOTES"].iloc[0]) if 'NOTES' in group.columns else ""
+
+            pdf.cell(30, 8, "LOGO POSITION:", border=1, align="C")
+            pdf.set_font("Arial", "", 10)
+            pdf.cell(70, 8, logo_position_value, border=1)  # Adjust width for notes column
+            pdf.set_font("Arial", "B", 10)
+            pdf.cell(30, 8, "NOTES:", border=1, align="C")
+            pdf.set_font("Arial", "", 10)
+            pdf.cell(60, 8, notes_value, border=1)
             pdf.ln(10)
 
             # ➕ LOGO SKU row
