@@ -61,6 +61,7 @@ def add_logo_color_table(pdf):
 
     pdf.set_font("Arial", "B", 10)
     pdf.cell(logo_color_width, 8, "LOGO COLOR:", border=1, align="C")
+    pdf.set_font("Arial", "", 10)
     pdf.cell(number_width, 8, "1", border=1, align="C")
     pdf.cell(value_width, 8, "", border=1)
     pdf.cell(number_width, 8, "9", border=1, align="C")
@@ -183,24 +184,35 @@ def upload_file():
             pdf.cell(QTY_WIDTH, 8, str(int(total_qty)), 1, align="C")
             pdf.ln(11)
 
+            label1_width = 41.8
+            value1_width = 72.2
+            label2_width = 19.0
+            value2_width = 57.0
+
             pdf.set_font("Arial", "B", 10)
-            pdf.cell(30, 8, "LOGO POSITION:", border=1, align="C")
+            pdf.cell(label1_width, 8, "LOGO POSITION:", border=1, align="C")
             pdf.set_font("Arial", "", 10)
             logo_position_value = safe_get(group["LOGO POSITION"].iloc[0]) if "LOGO POSITION" in group else ""
-            pdf.cell(70, 8, logo_position_value, border=1)
+            pdf.cell(value1_width, 8, logo_position_value, border=1)
             pdf.set_font("Arial", "B", 10)
-            pdf.cell(30, 8, "NOTES:", border=1, align="C")
+            pdf.cell(label2_width, 8, "NOTES:", border=1, align="C")
             pdf.set_font("Arial", "", 10)
             notes_value = safe_get(group["NOTES"].iloc[0]) if "NOTES" in group else ""
-            pdf.cell(60, 8, notes_value, border=1)
+            pdf.cell(value2_width, 8, notes_value, border=1)
             pdf.ln(0.25)
 
             add_logo_color_table(pdf)
 
             pdf.ln(2.5)
+            pdf.set_font("Arial", "B", 10)
             pdf.cell(30, 8, "LOGO SKU:", border=1, align="C")
             pdf.set_font("Arial", "", 10)
-            logo_value = truncate_text(safe_get(group["LOGO"].iloc[0]), pdf, (190 - 30) * 0.98)
+            raw_logo = safe_get(group["LOGO"].iloc[0])
+            try:
+                logo_value = str(int(float(raw_logo)))
+            except (ValueError, TypeError):
+                logo_value = raw_logo
+            logo_value = truncate_text(logo_value, pdf, (190 - 30) * 0.98)
             pdf.cell(160, 8, logo_value, border=1)
             pdf.ln(10)
 
