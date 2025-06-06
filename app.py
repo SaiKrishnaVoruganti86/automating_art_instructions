@@ -52,6 +52,45 @@ def render_items_section(pdf, vendor_styles):
         pdf.cell(value_width, 8, line.strip(", "), border=1)
         pdf.ln()
 
+def add_logo_color_table(pdf):
+    pdf.ln(10)
+    total_width = 190
+    logo_color_width = total_width * 0.20
+    number_width = total_width * 0.05
+    value_width = total_width * 0.35
+
+    pdf.set_font("Arial", "B", 10)
+    pdf.cell(logo_color_width, 8, "LOGO COLOR:", border=1, align="C")
+    pdf.cell(number_width, 8, "1", border=1, align="C")
+    pdf.cell(value_width, 8, "", border=1)
+    pdf.cell(number_width, 8, "9", border=1, align="C")
+    pdf.cell(value_width, 8, "", border=1)
+    pdf.ln()
+
+    pdf.cell(logo_color_width, 8, "", border=1)
+    pdf.cell(number_width, 8, "2", border=1, align="C")
+    pdf.cell(value_width, 8, "", border=1)
+    pdf.cell(number_width, 8, "10", border=1, align="C")
+    pdf.cell(value_width, 8, "", border=1)
+    pdf.ln()
+
+    pdf.set_font("Arial", "B", 10)
+    pdf.cell(logo_color_width, 8, "PRODUCTION DAY:", border=1, align="C")
+    pdf.set_font("Arial", "", 10)
+    pdf.cell(number_width, 8, "3", border=1, align="C")
+    pdf.cell(value_width, 8, "", border=1)
+    pdf.cell(number_width, 8, "11", border=1, align="C")
+    pdf.cell(value_width, 8, "", border=1)
+    pdf.ln()
+
+    for i in range(4, 9):
+        pdf.cell(logo_color_width, 8, "", border=1)
+        pdf.cell(number_width, 8, str(i), border=1, align="C")
+        pdf.cell(value_width, 8, "", border=1)
+        pdf.cell(number_width, 8, str(i + 8), border=1, align="C")
+        pdf.cell(value_width, 8, "", border=1)
+        pdf.ln()
+
 @app.route("/", methods=["GET", "POST"])
 def upload_file():
     if request.method == "POST":
@@ -64,10 +103,6 @@ def upload_file():
 
         df = pd.read_excel(file_path)
         df.columns = [col.strip() for col in df.columns]
-
-        # Filter out the rows where DueDateStatus is "Not Approved"
-        df = df[df['DueDateStatus'] == 'Approved']
-
         grouped = df.groupby("Document Number")
 
         for f in os.listdir(OUTPUT_FOLDER):
@@ -142,37 +177,31 @@ def upload_file():
                 pdf.cell(QTY_WIDTH, 8, qty_text, 1, align="C")
                 pdf.ln()
 
-            # ➕ Add total row
             pdf.set_font("Arial", "B", 10)
             pdf.cell(COLOR_WIDTH, 8, "", 1)
             pdf.cell(DESC_WIDTH, 8, "TOTAL:", 1, align="C")
             pdf.cell(QTY_WIDTH, 8, str(int(total_qty)), 1, align="C")
-            pdf.ln(2)
+            pdf.ln(11)
 
-            # ➕ Add 1cm gap before LOGO POSITION and NOTES row
-            pdf.ln(10)  # 1cm gap
-
-            # ➕ LOGO POSITION and NOTES row
             pdf.set_font("Arial", "B", 10)
-            logo_position_value = safe_get(group["LOGO POSITION"].iloc[0]) if 'LOGO POSITION' in group.columns else ""
-            notes_value = safe_get(group["NOTES"].iloc[0]) if 'NOTES' in group.columns else ""
-
             pdf.cell(30, 8, "LOGO POSITION:", border=1, align="C")
             pdf.set_font("Arial", "", 10)
-            pdf.cell(70, 8, logo_position_value, border=1)  # Adjust width for notes column
+            logo_position_value = safe_get(group["LOGO POSITION"].iloc[0]) if "LOGO POSITION" in group else ""
+            pdf.cell(70, 8, logo_position_value, border=1)
             pdf.set_font("Arial", "B", 10)
             pdf.cell(30, 8, "NOTES:", border=1, align="C")
             pdf.set_font("Arial", "", 10)
+            notes_value = safe_get(group["NOTES"].iloc[0]) if "NOTES" in group else ""
             pdf.cell(60, 8, notes_value, border=1)
-            pdf.ln(10)
+            pdf.ln(0.25)
 
-            # ➕ LOGO SKU row
-            label_width = 30
-            value_width = 190 - label_width
-            pdf.cell(label_width, 8, "LOGO SKU:", border=1, align="C")
+            add_logo_color_table(pdf)
+
+            pdf.ln(2.5)
+            pdf.cell(30, 8, "LOGO SKU:", border=1, align="C")
             pdf.set_font("Arial", "", 10)
-            logo_value = str(int(float(safe_get(group["LOGO"].iloc[0]))))
-            pdf.cell(value_width, 8, logo_value, border=1)
+            logo_value = truncate_text(safe_get(group["LOGO"].iloc[0]), pdf, (190 - 30) * 0.98)
+            pdf.cell(160, 8, logo_value, border=1)
             pdf.ln(10)
 
             pdf.output(os.path.join(OUTPUT_FOLDER, f"ART_INSTRUCTIONS_SO_{doc_num}.pdf"))
@@ -184,6 +213,7 @@ def upload_file():
                     zipf.write(os.path.join(OUTPUT_FOLDER, fname), fname)
 
         return redirect(url_for("download_file"))
+
     return render_template("upload.html")
 
 @app.route("/download")
