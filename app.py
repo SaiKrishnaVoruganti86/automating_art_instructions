@@ -54,7 +54,7 @@ def render_items_section(pdf, vendor_styles):
 
 def add_logo_color_table(pdf):
     pdf.ln(5)
-    total_width = 180
+    total_width = 190.5 - (2 * 0.8)
     logo_color_width = total_width * 0.20
     number_width = total_width * 0.05
     value_width = total_width * 0.35
@@ -123,6 +123,7 @@ def upload_file():
             
             # Width setup
             full_width = 190
+            usable_width = full_width - (2 * 0.8)  # 190.5 - 1.6 = 188.9mm
             left_width = full_width * 0.75
             right_width = full_width - left_width
 
@@ -166,7 +167,7 @@ def upload_file():
 
             # Spacer for logo column
             pdf.cell(right_width, 6, "", border=0)
-            pdf.ln(7)
+            pdf.ln(8)
 
 
 
@@ -175,9 +176,12 @@ def upload_file():
             render_items_section(pdf, vendor_styles)
 
             pdf.ln(2)
-            COLOR_WIDTH = 90
-            DESC_WIDTH = 50
-            QTY_WIDTH = 20
+
+            usable_width = 190.5 - (2 * 0.8)  # total page width - left & right margins
+            COLOR_WIDTH = usable_width * 0.55
+            DESC_WIDTH = usable_width * 0.30
+            QTY_WIDTH = usable_width * 0.15
+
 
             pdf.set_font("Arial", "B", 8.5)
             pdf.cell(COLOR_WIDTH, 5, "COLOR", 1, align="C")
