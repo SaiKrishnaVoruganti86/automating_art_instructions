@@ -189,37 +189,36 @@ def upload_file():
             pdf.cell(QTY_WIDTH, 5, str(int(total_qty)), 1, align="C")
             pdf.ln(7)
 
-            # LOGO SKU, STITCH COUNT, LOGO POSITION
+            # LOGO SKU, LOGO POSITION, STITCH COUNT table with updated widths
             pdf.set_font("Arial", "B", 8.5)
-            pdf.cell(18.99, 5, "LOGO SKU:", border=1)
+            pdf.cell(18.89, 5, "LOGO SKU:", border=1)
+
             pdf.set_font("Arial", "", 8.5)
             raw_logo = safe_get(group["LOGO"].iloc[0]) if "LOGO" in group.columns else ""
             try:
                 logo = str(int(float(raw_logo)))
             except:
                 logo = raw_logo
-            logo = truncate_text(logo, pdf, 14.00)
-            pdf.cell(14.00, 5, logo, border=1)
+            logo = truncate_text(logo, pdf, 15.11 * 0.90)
+            pdf.cell(15.11, 5, logo, border=1, align="C")
 
             pdf.set_font("Arial", "B", 8.5)
-            pdf.cell(25.32, 5, "STITCH COUNT:", border=1)
-            pdf.set_font("Arial", "", 8.5)
-            stitch_count = safe_get(group["STITCH COUNT"].iloc[0]) if "STITCH COUNT" in group.columns else ""
-            pdf.cell(14.00, 5, stitch_count, border=1)
+            pdf.cell(28.34, 5, "LOGO POSITION:", border=1, align="C")
 
-            pdf.set_font("Arial", "B", 8.5)
-            pdf.cell(26.99, 5, "LOGO POSITION:", border=1)
             pdf.set_font("Arial", "", 8.5)
             logo_pos = safe_get(group["LOGO POSITION"].iloc[0]) if "LOGO POSITION" in group.columns else ""
-            pdf.cell(89.59, 5, logo_pos, border=1)
-            pdf.ln(7)
+            pdf.cell(83.12, 5, logo_pos, border=1)
 
             pdf.set_font("Arial", "B", 8.5)
-            pdf.cell(25, 5, "NOTES:", border=1)
+            pdf.cell(24.56, 5, "STITCH COUNT:", border=1)
+
             pdf.set_font("Arial", "", 8.5)
-            notes = safe_get(group["NOTES"].iloc[0]) if "NOTES" in group.columns else ""
-            pdf.cell(usable_width - 25, 5, notes, border=1)
-            pdf.ln(10)
+            stitch_count = safe_get(group["STITCH COUNT"].iloc[0]) if "STITCH COUNT" in group.columns else ""
+            pdf.cell(18.89, 5, stitch_count, border=1)
+
+            pdf.ln(7)
+
+
 
             add_logo_color_table(pdf)
 
