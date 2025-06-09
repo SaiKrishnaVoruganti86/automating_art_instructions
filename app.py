@@ -1,4 +1,3 @@
-
 from flask import Flask, render_template, request, send_file, redirect, url_for
 import pandas as pd
 from fpdf import FPDF
@@ -85,13 +84,20 @@ def add_logo_color_table(pdf):
     pdf.cell(value_width, 5, "", border=1)
     pdf.ln()
 
-    for i in range(4, 9):
+    for i in range(4, 8):
         pdf.cell(logo_color_width, 5, "", border=1)
         pdf.cell(number_width, 5, str(i), border=1, align="C")
         pdf.cell(value_width, 5, "", border=1)
         pdf.cell(number_width, 5, str(i + 8), border=1, align="C")
         pdf.cell(value_width, 5, "", border=1)
         pdf.ln()
+
+    # 15th row with only left half filled, right half blank (for 16th)
+    pdf.cell(logo_color_width, 5, "", border=1)
+    pdf.cell(number_width, 5, "8", border=1, align="C")
+    pdf.cell(value_width, 5, "", border=1)
+    pdf.cell(number_width + value_width, 5, "", border=1)
+    pdf.ln()
 
 @app.route("/", methods=["GET", "POST"])
 def upload_file():
@@ -157,7 +163,6 @@ def upload_file():
             render_items_section(pdf, vendor_styles, usable_width)
 
             pdf.ln(2)
-
             COLOR_WIDTH = usable_width * 0.55
             DESC_WIDTH = usable_width * 0.30
             QTY_WIDTH = usable_width * 0.15
@@ -189,10 +194,8 @@ def upload_file():
             pdf.cell(QTY_WIDTH, 5, str(int(total_qty)), 1, align="C")
             pdf.ln(7)
 
-            # LOGO SKU, LOGO POSITION, STITCH COUNT table with updated widths
             pdf.set_font("Arial", "B", 8.5)
             pdf.cell(18.89, 5, "LOGO SKU:", border=1)
-
             pdf.set_font("Arial", "", 8.5)
             raw_logo = safe_get(group["LOGO"].iloc[0]) if "LOGO" in group.columns else ""
             try:
@@ -204,21 +207,23 @@ def upload_file():
 
             pdf.set_font("Arial", "B", 8.5)
             pdf.cell(28.34, 5, "LOGO POSITION:", border=1, align="C")
-
             pdf.set_font("Arial", "", 8.5)
             logo_pos = safe_get(group["LOGO POSITION"].iloc[0]) if "LOGO POSITION" in group.columns else ""
             pdf.cell(83.12, 5, logo_pos, border=1)
 
             pdf.set_font("Arial", "B", 8.5)
             pdf.cell(24.56, 5, "STITCH COUNT:", border=1)
-
             pdf.set_font("Arial", "", 8.5)
             stitch_count = safe_get(group["STITCH COUNT"].iloc[0]) if "STITCH COUNT" in group.columns else ""
             pdf.cell(18.89, 5, stitch_count, border=1)
-
             pdf.ln(7)
 
-
+            pdf.set_font("Arial", "B", 8.5)
+            pdf.cell(usable_width * 0.10, 5, "NOTES:", border=1)
+            pdf.set_font("Arial", "", 8.5)
+            notes = safe_get(group["NOTES"].iloc[0]) if "NOTES" in group.columns else ""
+            pdf.cell(usable_width * 0.90, 5, notes, border=1)
+            pdf.ln(10)
 
             add_logo_color_table(pdf)
 
@@ -226,7 +231,8 @@ def upload_file():
             pdf.set_font("Arial", "B", 8.5)
             pdf.cell(25, 5, "FILE NAME:", border=1)
             pdf.set_font("Arial", "", 8.5)
-            pdf.cell(usable_width - 25, 5, f"ART_INSTRUCTIONS_SO_{doc_num}.pdf", border=1)
+            file_name = safe_get(group["FILE NAME"].iloc[0]) if "FILE NAME" in group.columns else ""
+            pdf.cell(usable_width - 25, 5, file_name, border=1)
             pdf.ln(8)
 
             pdf.output(os.path.join(OUTPUT_FOLDER, f"ART_INSTRUCTIONS_SO_{doc_num}.pdf"))
