@@ -25,10 +25,10 @@ def truncate_text(text, pdf, max_width):
         text = text[:-1]
     return text + ellipsis if text != original else text
 
-def render_items_section(pdf, vendor_styles):
+def render_items_section(pdf, vendor_styles, total_width):
     styles = vendor_styles.split(", ")
-    label_width = 35
-    value_width = 120
+    label_width = 30
+    value_width = total_width - label_width
     max_width = value_width - 5
 
     pdf.set_font("Arial", "", 8.5)
@@ -51,6 +51,7 @@ def render_items_section(pdf, vendor_styles):
         pdf.set_font("Arial", "", 8.5)
         pdf.cell(value_width, 5, line.strip(", "), border=1)
         pdf.ln()
+
 
 def add_logo_color_table(pdf):
     pdf.ln(5)
@@ -173,7 +174,8 @@ def upload_file():
 
 
             vendor_styles = ", ".join(group["VENDOR STYLE"].dropna().astype(str).unique())
-            render_items_section(pdf, vendor_styles)
+            render_items_section(pdf, vendor_styles, usable_width)
+
 
             pdf.ln(2)
 
