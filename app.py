@@ -708,19 +708,43 @@ def upload_file():
             pdf.cell(QTY_WIDTH, 5, "QTY", 1, align="C")
             pdf.ln()
 
+            # Group by COLOR and DESCRIPTION, then sum quantities
+            color_desc_groups = {}
             total_qty = 0
-            pdf.set_font("Arial", "", 8.5)
+            
             for _, row in group.iterrows():
-                color = truncate_text(safe_get(row.get("COLOR")), pdf, COLOR_WIDTH * 0.90)
-                desc = safe_get(row.get("SUBCATEGORY"))
+                color = safe_get(row.get("COLOR")).strip().upper()
+                desc = safe_get(row.get("SUBCATEGORY")).strip().upper()
+                
                 try:
-                    qty = float(row.get("Quantity"))
+                    qty = float(row.get("Quantity", 0))
                 except:
                     qty = 0
+                
+                # Create a key from color and description for grouping
+                group_key = f"{color}|{desc}"
+                
+                if group_key in color_desc_groups:
+                    color_desc_groups[group_key]['quantity'] += qty
+                else:
+                    color_desc_groups[group_key] = {
+                        'color': color,
+                        'description': desc,
+                        'quantity': qty
+                    }
+                
                 total_qty += qty
-                pdf.cell(COLOR_WIDTH, 5, color, 1, align="C")
-                pdf.cell(DESC_WIDTH, 5, desc, 1, align="C")
-                pdf.cell(QTY_WIDTH, 5, str(int(qty)), 1, align="C")
+
+            # Display grouped results
+            pdf.set_font("Arial", "", 8.5)
+            for group_key, group_data in color_desc_groups.items():
+                color_display = truncate_text(group_data['color'], pdf, COLOR_WIDTH * 0.90)
+                desc_display = group_data['description']
+                qty_display = str(int(group_data['quantity']))
+                
+                pdf.cell(COLOR_WIDTH, 5, color_display, 1, align="C")
+                pdf.cell(DESC_WIDTH, 5, desc_display, 1, align="C")
+                pdf.cell(QTY_WIDTH, 5, qty_display, 1, align="C")
                 pdf.ln()
 
             pdf.set_font("Arial", "B", 8.5)
