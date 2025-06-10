@@ -59,6 +59,7 @@ def add_logo_color_table(pdf):
     number_width = total_width * 0.05
     value_width = total_width * 0.35
 
+    # First row: LOGO COLOR header
     pdf.set_font("Arial", "B", 8.5)
     pdf.cell(logo_color_width, 5, "LOGO COLOR:", border=1, align="C")
     pdf.set_font("Arial", "", 8.5)
@@ -68,6 +69,7 @@ def add_logo_color_table(pdf):
     pdf.cell(value_width, 5, "", border=1)
     pdf.ln()
 
+    # Second row: Empty logo color cell
     pdf.cell(logo_color_width, 5, "", border=1)
     pdf.cell(number_width, 5, "2", border=1, align="C")
     pdf.cell(value_width, 5, "", border=1)
@@ -75,6 +77,7 @@ def add_logo_color_table(pdf):
     pdf.cell(value_width, 5, "", border=1)
     pdf.ln()
 
+    # Third row: PRODUCTION DAY header
     pdf.set_font("Arial", "B", 8.5)
     pdf.cell(logo_color_width, 5, "PRODUCTION DAY:", border=1, align="C")
     pdf.set_font("Arial", "", 8.5)
@@ -84,16 +87,29 @@ def add_logo_color_table(pdf):
     pdf.cell(value_width, 5, "", border=1)
     pdf.ln()
 
+    # Calculate the height of the merged cell (5 rows * 5 units = 25 units)
+    merged_cell_height = 5 * 5  # 5 rows of height 5 each
+    
+    # Store current position to draw the merged cell
+    current_x = pdf.get_x()
+    current_y = pdf.get_y()
+    
+    # Draw the large merged cell for logo color column
+    pdf.cell(logo_color_width, merged_cell_height, "", border=1)
+    
+    # Move to the position right after the merged cell to continue with other columns
+    pdf.set_xy(current_x + logo_color_width, current_y)
+    
+    # Draw rows 4-7 (numbers 4-7 and 12-15)
     for i in range(4, 8):
-        pdf.cell(logo_color_width, 5, "", border=1)
         pdf.cell(number_width, 5, str(i), border=1, align="C")
         pdf.cell(value_width, 5, "", border=1)
         pdf.cell(number_width, 5, str(i + 8), border=1, align="C")
         pdf.cell(value_width, 5, "", border=1)
-        pdf.ln()
+        # Move to next line, but stay at the same x position (after the merged cell)
+        pdf.set_xy(current_x + logo_color_width, pdf.get_y() + 5)
 
-    # 15th row with only left half filled, right half blank (for 16th)
-    pdf.cell(logo_color_width, 5, "", border=1)
+    # Last row with only left half filled (number 8), right half blank
     pdf.cell(number_width, 5, "8", border=1, align="C")
     pdf.cell(value_width, 5, "", border=1)
     pdf.cell(number_width + value_width, 5, "", border=1)
