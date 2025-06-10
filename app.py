@@ -220,25 +220,48 @@ def add_logo_color_table(pdf, logo_colors=None):
     pdf.cell(number_width + value_width, 5, "", border=1)
     pdf.ln()
 
+def apply_max_size_constraint(width_mm, height_mm, max_width=91.9, max_height=58.1):
+    """Apply maximum size constraint while preserving aspect ratio"""
+    if width_mm <= max_width and height_mm <= max_height:
+        # Image is within limits, return as-is
+        return width_mm, height_mm
+    
+    # Calculate scaling factors for both dimensions
+    width_scale = max_width / width_mm
+    height_scale = max_height / height_mm
+    
+    # Use the smaller scaling factor to ensure both dimensions fit
+    scale_factor = min(width_scale, height_scale)
+    
+    # Apply scaling
+    new_width = width_mm * scale_factor
+    new_height = height_mm * scale_factor
+    
+    return new_width, new_height
+
 def get_image_dimensions_mm(image_path, dpi=300):
-    """Get image dimensions in millimeters"""
+    """Get image dimensions in millimeters with max size constraint"""
     try:
         with Image.open(image_path) as img:
             width_px, height_px = img.size
             # Convert pixels to millimeters (assuming 300 DPI)
             width_mm = (width_px / dpi) * 25.4
             height_mm = (height_px / dpi) * 25.4
-            return width_mm, height_mm
+            
+            # Apply maximum size constraint
+            constrained_width, constrained_height = apply_max_size_constraint(width_mm, height_mm)
+            
+            return constrained_width, constrained_height
     except Exception as e:
         print(f"Error getting dimensions for {image_path}: {e}")
         return 25, 20  # Default fallback size
 
-def calculate_optimal_layout(images, available_width, available_height, margin=5):
-    """Calculate optimal layout for images - use actual size if they fit, otherwise optimize"""
+def calculate_optimal_layout(images, available_width, available_height, margin=5, max_width=91.9, max_height=58.1):
+    """Calculate optimal layout for images with max size constraint"""
     if not images:
         return []
     
-    # Get actual dimensions for all images
+    # Get actual dimensions for all images (already constrained by max size)
     image_info = []
     for img in images:
         width, height = get_image_dimensions_mm(img['path'])
@@ -246,11 +269,11 @@ def calculate_optimal_layout(images, available_width, available_height, margin=5
             'path': img['path'],
             'filename': img['filename'],
             'suffix': img['suffix'],
-            'original_width': width,
-            'original_height': height
+            'original_width': width,  # Already constrained
+            'original_height': height  # Already constrained
         })
     
-    # Try to fit images at their actual sizes first
+    # Try to fit images at their constrained sizes first
     layout = []
     current_row = []
     current_row_width = 0
@@ -265,7 +288,7 @@ def calculate_optimal_layout(images, available_width, available_height, margin=5
         needed_width = current_row_width + (margin if current_row else 0) + img_width
         
         if needed_width <= available_width and total_height_used + img_height <= available_height:
-            # Fits in current row at actual size
+            # Fits in current row at constrained size
             current_row.append({
                 **img_info,
                 'display_width': img_width,
@@ -283,7 +306,7 @@ def calculate_optimal_layout(images, available_width, available_height, margin=5
                 current_row_width = 0
                 current_row_height = 0
             
-            # Check if single image fits at actual size in new row
+            # Check if single image fits at constrained size in new row
             if img_width <= available_width and total_height_used + img_height <= available_height:
                 current_row.append({
                     **img_info,
@@ -294,7 +317,7 @@ def calculate_optimal_layout(images, available_width, available_height, margin=5
                 current_row_width = img_width
                 current_row_height = img_height
             else:
-                # Need to resize - will handle this in optimization phase
+                # Need to resize further - will handle this in optimization phase
                 current_row.append({
                     **img_info,
                     'display_width': img_width,
@@ -309,7 +332,7 @@ def calculate_optimal_layout(images, available_width, available_height, margin=5
         layout.append(current_row)
         total_height_used += current_row_height
     
-    # Check if we need to optimize sizes (if any images don't fit at actual size)
+    # Check if we need to optimize sizes (if any images don't fit at constrained size)
     needs_optimization = any(
         not img['use_actual_size'] 
         for row in layout 
@@ -317,8 +340,8 @@ def calculate_optimal_layout(images, available_width, available_height, margin=5
     ) or total_height_used > available_height
     
     if needs_optimization:
-        # Optimize layout to fit all images
-        layout = optimize_image_layout(image_info, available_width, available_height, margin)
+        # Optimize layout to fit all images (with max size constraint)
+        layout = optimize_image_layout(image_info, available_width, available_height, margin, max_width, max_height)
     
     return layout
 
