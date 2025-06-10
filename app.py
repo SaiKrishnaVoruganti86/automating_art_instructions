@@ -41,21 +41,26 @@ def load_logo_database():
         logo_database = None
 
 def get_logo_info(logo_sku):
-    """Get logo information from the database based on SKU"""
-    if logo_database is None or pd.isna(logo_sku) or logo_sku == "" or logo_sku == "0000":
+    """Get logo information from the database based on SKU (preserving leading zeros)"""
+    if logo_database is None or pd.isna(logo_sku) or logo_sku == "" or str(logo_sku) == "0000":
         return None
     
     try:
-        # Convert logo_sku to string for comparison
-        logo_sku_str = str(int(float(logo_sku))) if str(logo_sku).replace('.', '').isdigit() else str(logo_sku)
+        # Preserve the original format including leading zeros
+        logo_sku_str = str(logo_sku).strip()
         
-        # Search for the logo SKU in the database
-        logo_row = logo_database[logo_database['Logo SKU'].astype(str) == logo_sku_str]
+        # Search for the logo SKU in the database (try both original and numeric formats)
+        logo_row = logo_database[logo_database['Logo SKU'].astype(str).str.strip() == logo_sku_str]
+        
+        # If not found with original format, try numeric conversion for backward compatibility
+        if logo_row.empty and logo_sku_str.isdigit():
+            numeric_sku = str(int(logo_sku_str))
+            logo_row = logo_database[logo_database['Logo SKU'].astype(str).str.strip() == numeric_sku]
         
         if not logo_row.empty:
             row = logo_row.iloc[0]
             return {
-                'logo_sku': safe_get(row['Logo SKU']),
+                'logo_sku': logo_sku_str,  # Use original format
                 'client': safe_get(row['CLIENT']),
                 'logo_position': safe_get(row['Logo Position']),
                 'operation_type': safe_get(row['Operation Type']),
@@ -80,15 +85,16 @@ def get_logo_colors(row):
     return colors
 
 def find_logo_images_by_sku(logo_sku):
-    """Find all logo image files based on SKU number with suffix letters (e.g., 2278a, 2278b)"""
-    if not logo_sku or pd.isna(logo_sku) or logo_sku == "" or logo_sku == "0000":
+    """Find all logo image files based on SKU number with suffix letters (preserving leading zeros)"""
+    if not logo_sku or pd.isna(logo_sku) or logo_sku == "":
         return []
     
-    try:
-        # Convert logo_sku to string for filename matching
-        sku_str = str(int(float(logo_sku))) if str(logo_sku).replace('.', '').isdigit() else str(logo_sku)
-    except:
-        sku_str = str(logo_sku)
+    # Preserve original format including leading zeros
+    sku_str = str(logo_sku).strip()
+    
+    # Skip if it's the default "0000" or equivalent
+    if sku_str == "0000" or sku_str == "0":
+        return []
     
     # Common image extensions
     extensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff']
@@ -534,13 +540,25 @@ def upload_file():
 
         df = pd.read_excel(file_path)
         df.columns = [col.strip() for col in df.columns]
-        grouped = df.groupby("Document Number")
+        
+        # Group by both Document Number AND Logo SKU to handle multiple logos per SO
+        grouped = df.groupby(["Document Number", "LOGO"])
 
         # Clear output folder
         for f in os.listdir(OUTPUT_FOLDER):
             os.remove(os.path.join(OUTPUT_FOLDER, f))
 
-        for doc_num, group in grouped:
+        for (doc_num, logo_sku), group in grouped:
+            # Skip entries with no logo or default logo
+            if pd.isna(logo_sku) or str(logo_sku).strip() in ["", "0", "0000"]:
+                print(f"Skipping Document {doc_num} - No valid logo SKU")
+                continue
+                
+            # Preserve original logo SKU format
+            logo_sku_str = str(logo_sku).strip()
+            
+            print(f"Processing Document {doc_num} with Logo SKU: {logo_sku_str}")
+            
             pdf = FPDF(orientation="P", unit="mm", format=(190.5, 254.0))
             pdf.set_margins(0.8, 0.8, 0.8)
             pdf.add_page()
@@ -618,20 +636,13 @@ def upload_file():
             pdf.cell(QTY_WIDTH, 5, str(int(total_qty)), 1, align="C")
             pdf.ln(7)
 
-            # Enhanced logo section with database lookup
-            raw_logo = safe_get(group["LOGO"].iloc[0]) if "LOGO" in group.columns else ""
-            try:
-                logo_sku = str(int(float(raw_logo)))
-            except:
-                logo_sku = raw_logo
-            
-            # Get logo information from database
-            logo_info = get_logo_info(logo_sku)
+            # Enhanced logo section with database lookup (using preserved SKU format)
+            logo_info = get_logo_info(logo_sku_str)
             
             pdf.set_font("Arial", "B", 8.5)
             pdf.cell(18.89, 5, "LOGO SKU:", border=1, align="C")
             pdf.set_font("Arial", "", 8.5)
-            logo_display = truncate_text(logo_sku, pdf, 15.11 * 0.90)
+            logo_display = truncate_text(logo_sku_str, pdf, 15.11 * 0.90)
             pdf.cell(15.11, 5, logo_display, border=1, align="C")
 
             pdf.set_font("Arial", "B", 8.5)
@@ -687,12 +698,17 @@ def upload_file():
             pdf.cell(usable_width - 25, 5, file_name, border=1)
             pdf.ln(8)
 
-            # Add logo images based on SKU number
+            # Add logo images based on preserved SKU number
             pdf.ln(5)  # Add some space before images
-            add_logo_images_to_pdf(pdf, logo_sku)
+            add_logo_images_to_pdf(pdf, logo_sku_str)
 
-            pdf.output(os.path.join(OUTPUT_FOLDER, f"ART_INSTRUCTIONS_SO_{doc_num}.pdf"))
-            print(f"Generated PDF for Document {doc_num} with logo info: {logo_info is not None}")
+            # Generate filename: SO_SO#_AI_LOGO SKU.pdf
+            safe_doc_num = str(doc_num).replace("/", "_").replace("\\", "_")
+            safe_logo_sku = logo_sku_str.replace("/", "_").replace("\\", "_")
+            filename = f"SO_{safe_doc_num}_AI_{safe_logo_sku}.pdf"
+            
+            pdf.output(os.path.join(OUTPUT_FOLDER, filename))
+            print(f"Generated PDF: {filename}")
 
         # Create ZIP file
         zip_path = os.path.join(OUTPUT_FOLDER, ZIP_NAME)
