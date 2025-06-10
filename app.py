@@ -435,9 +435,23 @@ def optimize_image_layout(image_info, available_width, available_height, margin=
     
     return layout
 
-def add_logo_images_to_pdf(pdf, logo_sku):
-    """Add logo images to PDF with intelligent sizing and layout"""
-    if not logo_sku or pd.isna(logo_sku) or logo_sku == "" or logo_sku == "0000":
+def add_logo_images_to_pdf(pdf, logo_sku, logo_info=None):
+    """Add logo images to PDF with intelligent sizing and layout, or display message if logo info not found"""
+    if not logo_sku or pd.isna(logo_sku) or logo_sku == "":
+        return
+    
+    # Check if logo info was found in database
+    if logo_info is None:
+        print(f"Logo info not found in database for SKU: {logo_sku}")
+        
+        # Add "logo info not found" message to PDF
+        current_y = pdf.get_y() + 5
+        pdf.set_xy(pdf.l_margin, current_y)
+        pdf.set_font("Arial", "B", 12)
+        pdf.set_text_color(255, 0, 0)  # Red text
+        pdf.cell(0, 10, f"Logo info not found in database for SKU: {logo_sku}", align="C")
+        pdf.ln(15)
+        pdf.set_text_color(0, 0, 0)  # Reset to black text
         return
     
     # Find all images for this SKU
@@ -445,6 +459,15 @@ def add_logo_images_to_pdf(pdf, logo_sku):
     
     if not logo_images:
         print(f"No logo images found for SKU: {logo_sku}")
+        
+        # Add "no images found" message to PDF
+        current_y = pdf.get_y() + 5
+        pdf.set_xy(pdf.l_margin, current_y)
+        pdf.set_font("Arial", "I", 10)
+        pdf.set_text_color(128, 128, 128)  # Gray text
+        pdf.cell(0, 8, f"No logo images found for SKU: {logo_sku}", align="C")
+        pdf.ln(12)
+        pdf.set_text_color(0, 0, 0)  # Reset to black text
         return
     
     print(f"Found {len(logo_images)} logo image(s) for SKU {logo_sku}: {[img['filename'] for img in logo_images]}")
@@ -461,6 +484,15 @@ def add_logo_images_to_pdf(pdf, logo_sku):
     
     if not layout:
         print(f"Could not fit images for SKU {logo_sku}")
+        
+        # Add "could not fit images" message to PDF
+        current_y = pdf.get_y() + 5
+        pdf.set_xy(pdf.l_margin, current_y)
+        pdf.set_font("Arial", "I", 10)
+        pdf.set_text_color(128, 128, 128)  # Gray text
+        pdf.cell(0, 8, f"Logo images too large to fit for SKU: {logo_sku}", align="C")
+        pdf.ln(12)
+        pdf.set_text_color(0, 0, 0)  # Reset to black text
         return
     
     try:
@@ -524,6 +556,15 @@ def add_logo_images_to_pdf(pdf, logo_sku):
         
     except Exception as e:
         print(f"Error adding logo images for SKU {logo_sku}: {e}")
+        
+        # Add error message to PDF
+        current_y = pdf.get_y() + 5
+        pdf.set_xy(pdf.l_margin, current_y)
+        pdf.set_font("Arial", "I", 10)
+        pdf.set_text_color(255, 0, 0)  # Red text
+        pdf.cell(0, 8, f"Error loading logo images for SKU: {logo_sku}", align="C")
+        pdf.ln(12)
+        pdf.set_text_color(0, 0, 0)  # Reset to black text
 
 @app.route("/", methods=["GET", "POST"])
 def upload_file():
@@ -566,6 +607,11 @@ def upload_file():
                 # Skip empty or invalid values
                 if logo_str in ['', 'nan', 'NaN', '0', '0000']:
                     return ""
+                
+                # IMPORTANT: If you want automatic padding for short numeric values,
+                # uncomment the lines below. This will convert "9" to "0009"
+                # if logo_str.isdigit() and len(logo_str) < 4:
+                #     logo_str = logo_str.zfill(4)  # Pad to 4 digits
                     
                 return logo_str
             
@@ -574,11 +620,19 @@ def upload_file():
             # Filter out rows with empty/invalid logos
             df = df[df['LOGO'] != ""]
             
-            print("LOGO column processed to preserve leading zeros")
+            print("LOGO column processed to preserve original format")
             
             # Show sample of LOGO values for debugging
             sample_logos = df['LOGO'].dropna().unique()[:10]
-            print(f"Sample LOGO values after processing: {list(sample_logos)}")
+            print(f"Sample LOGO values detected: {list(sample_logos)}")
+            
+            # Warning if we detect short numeric values that might need leading zeros
+            short_numeric = [logo for logo in sample_logos if logo.isdigit() and len(logo) < 4]
+            if short_numeric:
+                print(f"⚠️  WARNING: Found short numeric LOGO values that might need leading zeros: {short_numeric}")
+                print("   If these should have leading zeros (e.g., '9' should be '0009'):")
+                print("   1. Format the LOGO column as Text in Excel before entering data")
+                print("   2. Or uncomment the auto-padding code in clean_logo_value function")
         
         # Group by both Document Number AND Logo SKU to handle multiple logos per SO
         grouped = df.groupby(["Document Number", "LOGO"])
@@ -737,9 +791,9 @@ def upload_file():
             pdf.cell(usable_width - 25, 5, file_name, border=1)
             pdf.ln(8)
 
-            # Add logo images based on preserved SKU number
+            # Add logo images based on preserved SKU number and pass logo_info
             pdf.ln(5)  # Add some space before images
-            add_logo_images_to_pdf(pdf, logo_sku_str)
+            add_logo_images_to_pdf(pdf, logo_sku_str, logo_info)
 
             # Generate filename: SO_SO#_AI_LOGO SKU.pdf
             safe_doc_num = str(doc_num).replace("/", "_").replace("\\", "_")
