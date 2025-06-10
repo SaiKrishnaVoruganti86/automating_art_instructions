@@ -69,26 +69,18 @@ def add_logo_color_table(pdf):
     pdf.cell(value_width, 5, "", border=1)
     pdf.ln()
 
-    # Second row: Empty logo color cell
-    pdf.cell(logo_color_width, 5, "", border=1)
+    # Second row: PRODUCTION DAY directly under LOGO COLOR
+    pdf.set_font("Arial", "B", 8.5)
+    pdf.cell(logo_color_width, 5, "PRODUCTION DAY:", border=1, align="C")
+    pdf.set_font("Arial", "", 8.5)
     pdf.cell(number_width, 5, "2", border=1, align="C")
     pdf.cell(value_width, 5, "", border=1)
     pdf.cell(number_width, 5, "10", border=1, align="C")
     pdf.cell(value_width, 5, "", border=1)
     pdf.ln()
 
-    # Third row: PRODUCTION DAY header
-    pdf.set_font("Arial", "B", 8.5)
-    pdf.cell(logo_color_width, 5, "PRODUCTION DAY:", border=1, align="C")
-    pdf.set_font("Arial", "", 8.5)
-    pdf.cell(number_width, 5, "3", border=1, align="C")
-    pdf.cell(value_width, 5, "", border=1)
-    pdf.cell(number_width, 5, "11", border=1, align="C")
-    pdf.cell(value_width, 5, "", border=1)
-    pdf.ln()
-
-    # Calculate the height of the merged cell (5 rows * 5 units = 25 units)
-    merged_cell_height = 5 * 5  # 5 rows of height 5 each
+    # Calculate the height of the merged cell (6 rows * 5 units = 30 units)
+    merged_cell_height = 6 * 5  # 6 rows of height 5 each
     
     # Store current position to draw the merged cell
     current_x = pdf.get_x()
@@ -100,8 +92,8 @@ def add_logo_color_table(pdf):
     # Move to the position right after the merged cell to continue with other columns
     pdf.set_xy(current_x + logo_color_width, current_y)
     
-    # Draw rows 4-7 (numbers 4-7 and 12-15)
-    for i in range(4, 8):
+    # Draw rows 3-8 (numbers 3-8 and 11-16)
+    for i in range(3, 8):
         pdf.cell(number_width, 5, str(i), border=1, align="C")
         pdf.cell(value_width, 5, "", border=1)
         pdf.cell(number_width, 5, str(i + 8), border=1, align="C")
@@ -211,7 +203,7 @@ def upload_file():
             pdf.ln(7)
 
             pdf.set_font("Arial", "B", 8.5)
-            pdf.cell(18.89, 5, "LOGO SKU:", border=1)
+            pdf.cell(18.89, 5, "LOGO SKU:", border=1, align="C")
             pdf.set_font("Arial", "", 8.5)
             raw_logo = safe_get(group["LOGO"].iloc[0]) if "LOGO" in group.columns else ""
             try:
@@ -228,24 +220,24 @@ def upload_file():
             pdf.cell(83.12, 5, logo_pos, border=1)
 
             pdf.set_font("Arial", "B", 8.5)
-            pdf.cell(24.56, 5, "STITCH COUNT:", border=1)
+            pdf.cell(24.56, 5, "STITCH COUNT:", border=1, align="C")
             pdf.set_font("Arial", "", 8.5)
             stitch_count = safe_get(group["STITCH COUNT"].iloc[0]) if "STITCH COUNT" in group.columns else ""
             pdf.cell(18.89, 5, stitch_count, border=1)
             pdf.ln(7)
 
             pdf.set_font("Arial", "B", 8.5)
-            pdf.cell(usable_width * 0.10, 5, "NOTES:", border=1)
+            pdf.cell(usable_width * 0.10, 5, "NOTES:", border=1, align="C")
             pdf.set_font("Arial", "", 8.5)
             notes = safe_get(group["NOTES"].iloc[0]) if "NOTES" in group.columns else ""
             pdf.cell(usable_width * 0.90, 5, notes, border=1)
-            pdf.ln(10)
+            pdf.ln(2)
 
             add_logo_color_table(pdf)
 
-            pdf.ln(10)
+            pdf.ln(2)
             pdf.set_font("Arial", "B", 8.5)
-            pdf.cell(25, 5, "FILE NAME:", border=1)
+            pdf.cell(25, 5, "FILE NAME:", border=1, align="C")
             pdf.set_font("Arial", "", 8.5)
             file_name = safe_get(group["FILE NAME"].iloc[0]) if "FILE NAME" in group.columns else ""
             pdf.cell(usable_width - 25, 5, file_name, border=1)
