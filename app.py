@@ -8,10 +8,97 @@ from werkzeug.utils import secure_filename
 app = Flask(__name__)
 UPLOAD_FOLDER = "uploads"
 OUTPUT_FOLDER = "outputs"
+LOGO_DB_FOLDER = "logo_database"  # New folder for logo database
+LOGO_IMAGES_FOLDER = "logo_images"  # New folder for logo images
 ZIP_NAME = "art_instructions_pdfs.zip"
+LOGO_DB_FILE = "ArtDBSample.xlsx"  # Logo database file
 
+# Create all necessary folders
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
+os.makedirs(LOGO_DB_FOLDER, exist_ok=True)
+os.makedirs(LOGO_IMAGES_FOLDER, exist_ok=True)
+
+# Global variable to store logo database
+logo_database = None
+
+def load_logo_database():
+    """Load the logo database into memory"""
+    global logo_database
+    logo_db_path = os.path.join(LOGO_DB_FOLDER, LOGO_DB_FILE)
+    
+    if os.path.exists(logo_db_path):
+        try:
+            logo_database = pd.read_excel(logo_db_path)
+            logo_database.columns = [col.strip() for col in logo_database.columns]
+            print(f"Logo database loaded successfully with {len(logo_database)} entries")
+        except Exception as e:
+            print(f"Error loading logo database: {e}")
+            logo_database = None
+    else:
+        print(f"Logo database file not found at: {logo_db_path}")
+        logo_database = None
+
+def get_logo_info(logo_sku):
+    """Get logo information from the database based on SKU"""
+    if logo_database is None or pd.isna(logo_sku) or logo_sku == "" or logo_sku == "0000":
+        return None
+    
+    try:
+        # Convert logo_sku to string for comparison
+        logo_sku_str = str(int(float(logo_sku))) if str(logo_sku).replace('.', '').isdigit() else str(logo_sku)
+        
+        # Search for the logo SKU in the database
+        logo_row = logo_database[logo_database['Logo SKU'].astype(str) == logo_sku_str]
+        
+        if not logo_row.empty:
+            row = logo_row.iloc[0]
+            return {
+                'logo_sku': safe_get(row['Logo SKU']),
+                'client': safe_get(row['CLIENT']),
+                'logo_position': safe_get(row['Logo Position']),
+                'operation_type': safe_get(row['Operation Type']),
+                'stitch_count': safe_get(row['Stitch Count']),
+                'file_name': safe_get(row['File Name']),
+                'notes': safe_get(row['Notes']),
+                'size': safe_get(row['Size']),
+                'logo_colors': get_logo_colors(row)
+            }
+    except Exception as e:
+        print(f"Error looking up logo SKU {logo_sku}: {e}")
+    
+    return None
+
+def get_logo_colors(row):
+    """Extract logo colors from the database row"""
+    colors = []
+    for i in range(1, 16):  # Logo Color 1 through Logo Color 15
+        color_col = f'Logo Color {i}'
+        if color_col in row and pd.notna(row[color_col]) and str(row[color_col]).strip():
+            colors.append(str(row[color_col]).strip())
+    return colors
+
+def find_logo_image(file_name):
+    """Find logo image file in the logo images folder"""
+    if not file_name or pd.isna(file_name):
+        return None
+    
+    # Common image extensions
+    extensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff']
+    
+    for ext in extensions:
+        # Try with exact filename
+        image_path = os.path.join(LOGO_IMAGES_FOLDER, f"{file_name}{ext}")
+        if os.path.exists(image_path):
+            return image_path
+        
+        # Try without extension if filename already has one
+        base_name = os.path.splitext(file_name)[0]
+        image_path = os.path.join(LOGO_IMAGES_FOLDER, f"{base_name}{ext}")
+        if os.path.exists(image_path):
+            return image_path
+    
+    return None
 
 def safe_get(value):
     return "" if pd.isna(value) else str(value)
@@ -52,7 +139,8 @@ def render_items_section(pdf, vendor_styles, total_width):
         pdf.cell(value_width, 5, line.strip(", "), border=1)
         pdf.ln()
 
-def add_logo_color_table(pdf):
+def add_logo_color_table(pdf, logo_colors=None):
+    """Enhanced logo color table with actual colors from database"""
     pdf.ln(5)
     total_width = 190.5 - (2 * 0.8)
     logo_color_width = total_width * 0.20
@@ -63,20 +151,30 @@ def add_logo_color_table(pdf):
     pdf.set_font("Arial", "B", 8.5)
     pdf.cell(logo_color_width, 5, "LOGO COLOR:", border=1, align="C")
     pdf.set_font("Arial", "", 8.5)
+    
+    # Add first color if available
+    color1 = logo_colors[0] if logo_colors and len(logo_colors) > 0 else ""
     pdf.cell(number_width, 5, "1", border=1, align="C")
-    pdf.cell(value_width, 5, "", border=1)
+    pdf.cell(value_width, 5, color1, border=1)
+    
+    # Add ninth color if available
+    color9 = logo_colors[8] if logo_colors and len(logo_colors) > 8 else ""
     pdf.cell(number_width, 5, "9", border=1, align="C")
-    pdf.cell(value_width, 5, "", border=1)
+    pdf.cell(value_width, 5, color9, border=1)
     pdf.ln()
 
     # Second row: PRODUCTION DAY directly under LOGO COLOR
     pdf.set_font("Arial", "B", 8.5)
     pdf.cell(logo_color_width, 5, "PRODUCTION DAY:", border=1, align="C")
     pdf.set_font("Arial", "", 8.5)
+    
+    # Add second and tenth colors if available
+    color2 = logo_colors[1] if logo_colors and len(logo_colors) > 1 else ""
+    color10 = logo_colors[9] if logo_colors and len(logo_colors) > 9 else ""
     pdf.cell(number_width, 5, "2", border=1, align="C")
-    pdf.cell(value_width, 5, "", border=1)
+    pdf.cell(value_width, 5, color2, border=1)
     pdf.cell(number_width, 5, "10", border=1, align="C")
-    pdf.cell(value_width, 5, "", border=1)
+    pdf.cell(value_width, 5, color10, border=1)
     pdf.ln()
 
     # Calculate the height of the merged cell (6 rows * 5 units = 30 units)
@@ -94,21 +192,44 @@ def add_logo_color_table(pdf):
     
     # Draw rows 3-8 (numbers 3-8 and 11-16)
     for i in range(3, 8):
+        color_left = logo_colors[i-1] if logo_colors and len(logo_colors) > i-1 else ""
+        color_right = logo_colors[i+7] if logo_colors and len(logo_colors) > i+7 else ""
+        
         pdf.cell(number_width, 5, str(i), border=1, align="C")
-        pdf.cell(value_width, 5, "", border=1)
+        pdf.cell(value_width, 5, color_left, border=1)
         pdf.cell(number_width, 5, str(i + 8), border=1, align="C")
-        pdf.cell(value_width, 5, "", border=1)
+        pdf.cell(value_width, 5, color_right, border=1)
         # Move to next line, but stay at the same x position (after the merged cell)
         pdf.set_xy(current_x + logo_color_width, pdf.get_y() + 5)
 
     # Last row with only left half filled (number 8), right half blank
+    color8 = logo_colors[7] if logo_colors and len(logo_colors) > 7 else ""
     pdf.cell(number_width, 5, "8", border=1, align="C")
-    pdf.cell(value_width, 5, "", border=1)
+    pdf.cell(value_width, 5, color8, border=1)
     pdf.cell(number_width + value_width, 5, "", border=1)
     pdf.ln()
 
+def add_logo_image_to_pdf(pdf, logo_info):
+    """Add logo image to PDF if available"""
+    if not logo_info or not logo_info.get('file_name'):
+        return
+    
+    image_path = find_logo_image(logo_info['file_name'])
+    if image_path:
+        try:
+            # Add logo image in a designated area
+            current_y = pdf.get_y()
+            # You can adjust these coordinates based on your layout needs
+            pdf.image(image_path, x=150, y=current_y, w=30, h=20)
+            print(f"Added logo image: {image_path}")
+        except Exception as e:
+            print(f"Error adding logo image {image_path}: {e}")
+
 @app.route("/", methods=["GET", "POST"])
 def upload_file():
+    # Load logo database on each request (or you could load it once at startup)
+    load_logo_database()
+    
     if request.method == "POST":
         file = request.files["excel"]
         if file.filename == "":
@@ -121,6 +242,7 @@ def upload_file():
         df.columns = [col.strip() for col in df.columns]
         grouped = df.groupby("Document Number")
 
+        # Clear output folder
         for f in os.listdir(OUTPUT_FOLDER):
             os.remove(os.path.join(OUTPUT_FOLDER, f))
 
@@ -202,49 +324,82 @@ def upload_file():
             pdf.cell(QTY_WIDTH, 5, str(int(total_qty)), 1, align="C")
             pdf.ln(7)
 
+            # Enhanced logo section with database lookup
+            raw_logo = safe_get(group["LOGO"].iloc[0]) if "LOGO" in group.columns else ""
+            try:
+                logo_sku = str(int(float(raw_logo)))
+            except:
+                logo_sku = raw_logo
+            
+            # Get logo information from database
+            logo_info = get_logo_info(logo_sku)
+            
             pdf.set_font("Arial", "B", 8.5)
             pdf.cell(18.89, 5, "LOGO SKU:", border=1, align="C")
             pdf.set_font("Arial", "", 8.5)
-            raw_logo = safe_get(group["LOGO"].iloc[0]) if "LOGO" in group.columns else ""
-            try:
-                logo = str(int(float(raw_logo)))
-            except:
-                logo = raw_logo
-            logo = truncate_text(logo, pdf, 15.11 * 0.90)
-            pdf.cell(15.11, 5, logo, border=1, align="C")
+            logo_display = truncate_text(logo_sku, pdf, 15.11 * 0.90)
+            pdf.cell(15.11, 5, logo_display, border=1, align="C")
 
             pdf.set_font("Arial", "B", 8.5)
             pdf.cell(28.34, 5, "LOGO POSITION:", border=1, align="C")
             pdf.set_font("Arial", "", 8.5)
-            logo_pos = safe_get(group["LOGO POSITION"].iloc[0]) if "LOGO POSITION" in group.columns else ""
+            # Use logo position from database if available, otherwise from original data
+            logo_pos = ""
+            if logo_info and logo_info['logo_position']:
+                logo_pos = logo_info['logo_position']
+            elif "LOGO POSITION" in group.columns:
+                logo_pos = safe_get(group["LOGO POSITION"].iloc[0])
             pdf.cell(83.12, 5, logo_pos, border=1)
 
             pdf.set_font("Arial", "B", 8.5)
             pdf.cell(24.56, 5, "STITCH COUNT:", border=1, align="C")
             pdf.set_font("Arial", "", 8.5)
-            stitch_count = safe_get(group["STITCH COUNT"].iloc[0]) if "STITCH COUNT" in group.columns else ""
-            pdf.cell(18.89, 5, stitch_count, border=1)
+            # Use stitch count from database if available, otherwise from original data
+            stitch_count = ""
+            if logo_info and logo_info['stitch_count']:
+                stitch_count = logo_info['stitch_count']
+            elif "STITCH COUNT" in group.columns:
+                stitch_count = safe_get(group["STITCH COUNT"].iloc[0])
+            pdf.cell(18.89, 5, str(stitch_count), border=1)
             pdf.ln(7)
 
+            # Enhanced notes section
             pdf.set_font("Arial", "B", 8.5)
             pdf.cell(usable_width * 0.10, 5, "NOTES:", border=1, align="C")
             pdf.set_font("Arial", "", 8.5)
-            notes = safe_get(group["NOTES"].iloc[0]) if "NOTES" in group.columns else ""
+            # Use notes from database if available, otherwise from original data
+            notes = ""
+            if logo_info and logo_info['notes']:
+                notes = logo_info['notes']
+            elif "NOTES" in group.columns:
+                notes = safe_get(group["NOTES"].iloc[0])
             pdf.cell(usable_width * 0.90, 5, notes, border=1)
             pdf.ln(2)
 
-            add_logo_color_table(pdf)
+            # Enhanced logo color table with actual colors
+            logo_colors = logo_info['logo_colors'] if logo_info else None
+            add_logo_color_table(pdf, logo_colors)
 
             pdf.ln(2)
             pdf.set_font("Arial", "B", 8.5)
             pdf.cell(25, 5, "FILE NAME:", border=1, align="C")
             pdf.set_font("Arial", "", 8.5)
-            file_name = safe_get(group["FILE NAME"].iloc[0]) if "FILE NAME" in group.columns else ""
+            # Use file name from database if available, otherwise from original data
+            file_name = ""
+            if logo_info and logo_info['file_name']:
+                file_name = logo_info['file_name']
+            elif "FILE NAME" in group.columns:
+                file_name = safe_get(group["FILE NAME"].iloc[0])
             pdf.cell(usable_width - 25, 5, file_name, border=1)
             pdf.ln(8)
 
-            pdf.output(os.path.join(OUTPUT_FOLDER, f"ART_INSTRUCTIONS_SO_{doc_num}.pdf"))
+            # Add logo image if available
+            add_logo_image_to_pdf(pdf, logo_info)
 
+            pdf.output(os.path.join(OUTPUT_FOLDER, f"ART_INSTRUCTIONS_SO_{doc_num}.pdf"))
+            print(f"Generated PDF for Document {doc_num} with logo info: {logo_info is not None}")
+
+        # Create ZIP file
         zip_path = os.path.join(OUTPUT_FOLDER, ZIP_NAME)
         with zipfile.ZipFile(zip_path, "w") as zipf:
             for fname in os.listdir(OUTPUT_FOLDER):
@@ -260,4 +415,6 @@ def download_file():
     return send_file(os.path.join(OUTPUT_FOLDER, ZIP_NAME), as_attachment=True)
 
 if __name__ == "__main__":
+    # Load logo database at startup
+    load_logo_database()
     app.run(debug=True)
