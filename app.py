@@ -538,8 +538,47 @@ def upload_file():
         file_path = os.path.join(UPLOAD_FOLDER, filename)
         file.save(file_path)
 
-        df = pd.read_excel(file_path)
+        # Read Excel file with LOGO column as string to preserve leading zeros
+        try:
+            # First, try reading with LOGO as string type
+            df = pd.read_excel(file_path, dtype={'LOGO': str})
+        except:
+            # Fallback: read normally and convert LOGO to string
+            df = pd.read_excel(file_path)
+            if 'LOGO' in df.columns:
+                df['LOGO'] = df['LOGO'].astype(str)
+        
         df.columns = [col.strip() for col in df.columns]
+        
+        # Clean and preserve LOGO format
+        if 'LOGO' in df.columns:
+            def clean_logo_value(logo_val):
+                if pd.isna(logo_val) or logo_val in ['nan', 'NaN', '']:
+                    return ""
+                
+                # Convert to string and clean
+                logo_str = str(logo_val).strip()
+                
+                # Handle float-like strings (e.g., "9.0" -> "9")
+                if logo_str.endswith('.0'):
+                    logo_str = logo_str[:-2]
+                
+                # Skip empty or invalid values
+                if logo_str in ['', 'nan', 'NaN', '0', '0000']:
+                    return ""
+                    
+                return logo_str
+            
+            df['LOGO'] = df['LOGO'].apply(clean_logo_value)
+            
+            # Filter out rows with empty/invalid logos
+            df = df[df['LOGO'] != ""]
+            
+            print("LOGO column processed to preserve leading zeros")
+            
+            # Show sample of LOGO values for debugging
+            sample_logos = df['LOGO'].dropna().unique()[:10]
+            print(f"Sample LOGO values after processing: {list(sample_logos)}")
         
         # Group by both Document Number AND Logo SKU to handle multiple logos per SO
         grouped = df.groupby(["Document Number", "LOGO"])
