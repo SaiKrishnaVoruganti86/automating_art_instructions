@@ -4,6 +4,7 @@ from fpdf import FPDF
 import os
 import zipfile
 from werkzeug.utils import secure_filename
+from PIL import Image  # Added for image dimension detection
 
 app = Flask(__name__)
 UPLOAD_FOLDER = "uploads"
@@ -78,27 +79,37 @@ def get_logo_colors(row):
             colors.append(str(row[color_col]).strip())
     return colors
 
-def find_logo_image(file_name):
-    """Find logo image file in the logo images folder"""
-    if not file_name or pd.isna(file_name):
-        return None
+def find_logo_images_by_sku(logo_sku):
+    """Find all logo image files based on SKU number with suffix letters (e.g., 2278a, 2278b)"""
+    if not logo_sku or pd.isna(logo_sku) or logo_sku == "" or logo_sku == "0000":
+        return []
+    
+    try:
+        # Convert logo_sku to string for filename matching
+        sku_str = str(int(float(logo_sku))) if str(logo_sku).replace('.', '').isdigit() else str(logo_sku)
+    except:
+        sku_str = str(logo_sku)
     
     # Common image extensions
     extensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff']
+    found_images = []
     
-    for ext in extensions:
-        # Try with exact filename
-        image_path = os.path.join(LOGO_IMAGES_FOLDER, f"{file_name}{ext}")
-        if os.path.exists(image_path):
-            return image_path
-        
-        # Try without extension if filename already has one
-        base_name = os.path.splitext(file_name)[0]
-        image_path = os.path.join(LOGO_IMAGES_FOLDER, f"{base_name}{ext}")
-        if os.path.exists(image_path):
-            return image_path
+    # Check for images with suffix letters (a, b, c, d, ...)
+    for suffix in 'abcdefghijklmnopqrstuvwxyz':
+        for ext in extensions:
+            image_filename = f"{sku_str}{suffix}{ext}"
+            image_path = os.path.join(LOGO_IMAGES_FOLDER, image_filename)
+            if os.path.exists(image_path):
+                found_images.append({
+                    'path': image_path,
+                    'filename': image_filename,
+                    'suffix': suffix
+                })
     
-    return None
+    # Sort by suffix to maintain order (a, b, c, ...)
+    found_images.sort(key=lambda x: x['suffix'])
+    
+    return found_images
 
 def safe_get(value):
     return "" if pd.isna(value) else str(value)
@@ -209,21 +220,281 @@ def add_logo_color_table(pdf, logo_colors=None):
     pdf.cell(number_width + value_width, 5, "", border=1)
     pdf.ln()
 
-def add_logo_image_to_pdf(pdf, logo_info):
-    """Add logo image to PDF if available"""
-    if not logo_info or not logo_info.get('file_name'):
+def get_image_dimensions_mm(image_path, dpi=300):
+    """Get image dimensions in millimeters"""
+    try:
+        with Image.open(image_path) as img:
+            width_px, height_px = img.size
+            # Convert pixels to millimeters (assuming 300 DPI)
+            width_mm = (width_px / dpi) * 25.4
+            height_mm = (height_px / dpi) * 25.4
+            return width_mm, height_mm
+    except Exception as e:
+        print(f"Error getting dimensions for {image_path}: {e}")
+        return 25, 20  # Default fallback size
+
+def calculate_optimal_layout(images, available_width, available_height, margin=5):
+    """Calculate optimal layout for images - use actual size if they fit, otherwise optimize"""
+    if not images:
+        return []
+    
+    # Get actual dimensions for all images
+    image_info = []
+    for img in images:
+        width, height = get_image_dimensions_mm(img['path'])
+        image_info.append({
+            'path': img['path'],
+            'filename': img['filename'],
+            'suffix': img['suffix'],
+            'original_width': width,
+            'original_height': height
+        })
+    
+    # Try to fit images at their actual sizes first
+    layout = []
+    current_row = []
+    current_row_width = 0
+    current_row_height = 0
+    total_height_used = 0
+    
+    for img_info in image_info:
+        img_width = img_info['original_width']
+        img_height = img_info['original_height']
+        
+        # Check if image fits in current row
+        needed_width = current_row_width + (margin if current_row else 0) + img_width
+        
+        if needed_width <= available_width and total_height_used + img_height <= available_height:
+            # Fits in current row at actual size
+            current_row.append({
+                **img_info,
+                'display_width': img_width,
+                'display_height': img_height,
+                'use_actual_size': True
+            })
+            current_row_width = needed_width
+            current_row_height = max(current_row_height, img_height)
+        else:
+            # Start new row if current row has images
+            if current_row:
+                layout.append(current_row)
+                total_height_used += current_row_height + margin
+                current_row = []
+                current_row_width = 0
+                current_row_height = 0
+            
+            # Check if single image fits at actual size in new row
+            if img_width <= available_width and total_height_used + img_height <= available_height:
+                current_row.append({
+                    **img_info,
+                    'display_width': img_width,
+                    'display_height': img_height,
+                    'use_actual_size': True
+                })
+                current_row_width = img_width
+                current_row_height = img_height
+            else:
+                # Need to resize - will handle this in optimization phase
+                current_row.append({
+                    **img_info,
+                    'display_width': img_width,
+                    'display_height': img_height,
+                    'use_actual_size': False
+                })
+                current_row_width = img_width
+                current_row_height = img_height
+    
+    # Add last row
+    if current_row:
+        layout.append(current_row)
+        total_height_used += current_row_height
+    
+    # Check if we need to optimize sizes (if any images don't fit at actual size)
+    needs_optimization = any(
+        not img['use_actual_size'] 
+        for row in layout 
+        for img in row
+    ) or total_height_used > available_height
+    
+    if needs_optimization:
+        # Optimize layout to fit all images
+        layout = optimize_image_layout(image_info, available_width, available_height, margin)
+    
+    return layout
+
+def optimize_image_layout(image_info, available_width, available_height, margin=5):
+    """Optimize image layout to fit all images in available space"""
+    num_images = len(image_info)
+    if num_images == 0:
+        return []
+    
+    # Calculate how many images per row and rows needed
+    best_layout = None
+    best_waste = float('inf')
+    
+    # Try different arrangements (1 to num_images per row)
+    for images_per_row in range(1, num_images + 1):
+        rows_needed = (num_images + images_per_row - 1) // images_per_row
+        
+        # Calculate available space per image
+        width_per_image = (available_width - (images_per_row - 1) * margin) / images_per_row
+        height_per_row = (available_height - (rows_needed - 1) * margin) / rows_needed
+        
+        # Check if this arrangement is feasible
+        max_aspect_ratio = max(img['original_width'] / img['original_height'] for img in image_info)
+        min_aspect_ratio = min(img['original_width'] / img['original_height'] for img in image_info)
+        
+        # Calculate what size images would be with this constraint
+        if width_per_image / height_per_row >= max_aspect_ratio:
+            # Height is the limiting factor
+            actual_height = height_per_row
+            actual_width = min(width_per_image, height_per_row * max_aspect_ratio)
+        else:
+            # Width is the limiting factor
+            actual_width = width_per_image
+            actual_height = min(height_per_row, width_per_image / min_aspect_ratio)
+        
+        # Calculate wasted space
+        used_width = images_per_row * actual_width + (images_per_row - 1) * margin
+        used_height = rows_needed * actual_height + (rows_needed - 1) * margin
+        wasted_space = (available_width * available_height) - (used_width * used_height)
+        
+        if wasted_space < best_waste:
+            best_waste = wasted_space
+            best_layout = {
+                'images_per_row': images_per_row,
+                'rows_needed': rows_needed,
+                'width_per_image': actual_width,
+                'height_per_image': actual_height
+            }
+    
+    # Create the optimized layout
+    if not best_layout:
+        return []
+    
+    layout = []
+    current_row = []
+    
+    for i, img_info in enumerate(image_info):
+        # Maintain aspect ratio while fitting in allocated space
+        aspect_ratio = img_info['original_width'] / img_info['original_height']
+        
+        if best_layout['width_per_image'] / best_layout['height_per_image'] > aspect_ratio:
+            # Height is limiting
+            display_height = best_layout['height_per_image']
+            display_width = display_height * aspect_ratio
+        else:
+            # Width is limiting
+            display_width = best_layout['width_per_image']
+            display_height = display_width / aspect_ratio
+        
+        current_row.append({
+            **img_info,
+            'display_width': display_width,
+            'display_height': display_height,
+            'use_actual_size': False
+        })
+        
+        # Start new row if needed
+        if len(current_row) == best_layout['images_per_row']:
+            layout.append(current_row)
+            current_row = []
+    
+    # Add last row if it has images
+    if current_row:
+        layout.append(current_row)
+    
+    return layout
+
+def add_logo_images_to_pdf(pdf, logo_sku):
+    """Add logo images to PDF with intelligent sizing and layout"""
+    if not logo_sku or pd.isna(logo_sku) or logo_sku == "" or logo_sku == "0000":
         return
     
-    image_path = find_logo_image(logo_info['file_name'])
-    if image_path:
-        try:
-            # Add logo image in a designated area
-            current_y = pdf.get_y()
-            # You can adjust these coordinates based on your layout needs
-            pdf.image(image_path, x=150, y=current_y, w=30, h=20)
-            print(f"Added logo image: {image_path}")
-        except Exception as e:
-            print(f"Error adding logo image {image_path}: {e}")
+    # Find all images for this SKU
+    logo_images = find_logo_images_by_sku(logo_sku)
+    
+    if not logo_images:
+        print(f"No logo images found for SKU: {logo_sku}")
+        return
+    
+    print(f"Found {len(logo_images)} logo image(s) for SKU {logo_sku}: {[img['filename'] for img in logo_images]}")
+    
+    # Calculate available space on current page
+    current_y = pdf.get_y()
+    page_height = pdf.h - pdf.b_margin  # Page height minus bottom margin
+    available_height = page_height - current_y - 10  # Leave 10mm buffer
+    available_width = pdf.w - pdf.l_margin - pdf.r_margin  # Available width
+    margin = 5  # Margin between images
+    
+    # Get optimal layout
+    layout = calculate_optimal_layout(logo_images, available_width, available_height, margin)
+    
+    if not layout:
+        print(f"Could not fit images for SKU {logo_sku}")
+        return
+    
+    try:
+        start_y = current_y + 5  # Small buffer from previous content
+        
+        for row_index, row in enumerate(layout):
+            if not row:
+                continue
+                
+            # Calculate starting X position to center the row
+            row_width = sum(img['display_width'] for img in row) + margin * (len(row) - 1)
+            start_x = pdf.l_margin + (available_width - row_width) / 2
+            
+            # Calculate Y position for this row
+            if row_index == 0:
+                row_y = start_y
+            else:
+                # Position based on previous row's height
+                prev_row_height = max(img['display_height'] for img in layout[row_index - 1])
+                row_y = start_y + sum(
+                    max(img['display_height'] for img in layout[i]) + margin 
+                    for i in range(row_index)
+                )
+            
+            # Place images in this row
+            current_x = start_x
+            row_height = max(img['display_height'] for img in row)
+            
+            for img_info in row:
+                # Center image vertically in the row
+                img_y = row_y + (row_height - img_info['display_height']) / 2
+                
+                # Add image to PDF
+                pdf.image(
+                    img_info['path'], 
+                    x=current_x, 
+                    y=img_y, 
+                    w=img_info['display_width'], 
+                    h=img_info['display_height']
+                )
+                
+                # Add suffix label below image
+                label_y = img_y + img_info['display_height'] + 1
+                pdf.set_xy(current_x, label_y)
+                pdf.set_font("Arial", "", 8)
+                pdf.cell(img_info['display_width'], 3, f"({img_info['suffix']})", align="C")
+                
+                # Move to next image position
+                current_x += img_info['display_width'] + margin
+                
+                # Debug info
+                size_info = "actual size" if img_info.get('use_actual_size', False) else "optimized size"
+                print(f"  Added {img_info['filename']} at {size_info}: {img_info['display_width']:.1f}x{img_info['display_height']:.1f}mm")
+        
+        # Update PDF cursor position
+        total_layout_height = sum(
+            max(img['display_height'] for img in row) + margin 
+            for row in layout
+        ) + 10  # Extra buffer
+        pdf.set_xy(pdf.l_margin, start_y + total_layout_height)
+        
+    except Exception as e:
+        print(f"Error adding logo images for SKU {logo_sku}: {e}")
 
 @app.route("/", methods=["GET", "POST"])
 def upload_file():
@@ -393,8 +664,9 @@ def upload_file():
             pdf.cell(usable_width - 25, 5, file_name, border=1)
             pdf.ln(8)
 
-            # Add logo image if available
-            add_logo_image_to_pdf(pdf, logo_info)
+            # Add logo images based on SKU number
+            pdf.ln(5)  # Add some space before images
+            add_logo_images_to_pdf(pdf, logo_sku)
 
             pdf.output(os.path.join(OUTPUT_FOLDER, f"ART_INSTRUCTIONS_SO_{doc_num}.pdf"))
             print(f"Generated PDF for Document {doc_num} with logo info: {logo_info is not None}")
