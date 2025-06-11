@@ -227,7 +227,7 @@ def render_items_section(pdf, vendor_styles, total_width):
         pdf.ln()
 
 def add_logo_color_table(pdf, logo_colors=None):
-    """Enhanced logo color table with actual colors from database"""
+    """Enhanced logo color table with actual colors from database and truncation"""
     pdf.ln(5)
     total_width = 190.5 - (2 * 0.8)
     logo_color_width = total_width * 0.20
@@ -239,15 +239,17 @@ def add_logo_color_table(pdf, logo_colors=None):
     pdf.cell(logo_color_width, 5, "LOGO COLOR:", border=1, align="C")
     pdf.set_font("Arial", "", 8.5)
     
-    # Add first color if available
+    # Add first color if available (truncated to 95% of cell width)
     color1 = logo_colors[0] if logo_colors and len(logo_colors) > 0 else ""
+    color1_display = truncate_text(color1, pdf, value_width * 0.95)
     pdf.cell(number_width, 5, "1", border=1, align="C")
-    pdf.cell(value_width, 5, color1, border=1)
+    pdf.cell(value_width, 5, color1_display, border=1)
     
-    # Add ninth color if available
+    # Add ninth color if available (truncated to 95% of cell width)
     color9 = logo_colors[8] if logo_colors and len(logo_colors) > 8 else ""
+    color9_display = truncate_text(color9, pdf, value_width * 0.95)
     pdf.cell(number_width, 5, "9", border=1, align="C")
-    pdf.cell(value_width, 5, color9, border=1)
+    pdf.cell(value_width, 5, color9_display, border=1)
     pdf.ln()
 
     # Second row: PRODUCTION DAY directly under LOGO COLOR
@@ -255,13 +257,15 @@ def add_logo_color_table(pdf, logo_colors=None):
     pdf.cell(logo_color_width, 5, "PRODUCTION DAY:", border=1, align="C")
     pdf.set_font("Arial", "", 8.5)
     
-    # Add second and tenth colors if available
+    # Add second and tenth colors if available (truncated to 95% of cell width)
     color2 = logo_colors[1] if logo_colors and len(logo_colors) > 1 else ""
+    color2_display = truncate_text(color2, pdf, value_width * 0.95)
     color10 = logo_colors[9] if logo_colors and len(logo_colors) > 9 else ""
+    color10_display = truncate_text(color10, pdf, value_width * 0.95)
     pdf.cell(number_width, 5, "2", border=1, align="C")
-    pdf.cell(value_width, 5, color2, border=1)
+    pdf.cell(value_width, 5, color2_display, border=1)
     pdf.cell(number_width, 5, "10", border=1, align="C")
-    pdf.cell(value_width, 5, color10, border=1)
+    pdf.cell(value_width, 5, color10_display, border=1)
     pdf.ln()
 
     # Calculate the height of the merged cell (6 rows * 5 units = 30 units)
@@ -282,17 +286,22 @@ def add_logo_color_table(pdf, logo_colors=None):
         color_left = logo_colors[i-1] if logo_colors and len(logo_colors) > i-1 else ""
         color_right = logo_colors[i+7] if logo_colors and len(logo_colors) > i+7 else ""
         
+        # Truncate colors to 95% of cell width
+        color_left_display = truncate_text(color_left, pdf, value_width * 0.95)
+        color_right_display = truncate_text(color_right, pdf, value_width * 0.95)
+        
         pdf.cell(number_width, 5, str(i), border=1, align="C")
-        pdf.cell(value_width, 5, color_left, border=1)
+        pdf.cell(value_width, 5, color_left_display, border=1)
         pdf.cell(number_width, 5, str(i + 8), border=1, align="C")
-        pdf.cell(value_width, 5, color_right, border=1)
+        pdf.cell(value_width, 5, color_right_display, border=1)
         # Move to next line, but stay at the same x position (after the merged cell)
         pdf.set_xy(current_x + logo_color_width, pdf.get_y() + 5)
 
     # Last row with only left half filled (number 8), right half blank
     color8 = logo_colors[7] if logo_colors and len(logo_colors) > 7 else ""
+    color8_display = truncate_text(color8, pdf, value_width * 0.95)
     pdf.cell(number_width, 5, "8", border=1, align="C")
-    pdf.cell(value_width, 5, color8, border=1)
+    pdf.cell(value_width, 5, color8_display, border=1)
     pdf.cell(number_width + value_width, 5, "", border=1)
     pdf.ln()
 
@@ -1043,18 +1052,106 @@ def upload_file():
             pdf.set_xy(current_x, current_y + cell_height)
             pdf.ln(7)
 
-            # Enhanced notes section
+            # Enhanced notes section with multi-line support
             pdf.set_font("Arial", "B", 8.5)
-            pdf.cell(usable_width * 0.10, 5, "NOTES:", border=1, align="C")
-            pdf.set_font("Arial", "", 8.5)
-            # Use notes from database if available, otherwise from original data
+            
+            # Get notes value from database or original data
             notes = ""
             if logo_info and logo_info['notes']:
                 notes = logo_info['notes']
             elif "NOTES" in group.columns:
                 notes = safe_get(group["NOTES"].iloc[0])
-            pdf.cell(usable_width * 0.90, 5, notes, border=1)
-            pdf.ln(2)
+            
+            # Calculate available width for notes (95% of notes value cell)
+            notes_value_width = (usable_width * 0.90) * 0.95  # 95% of the 90% notes value cell
+            
+            # Check if notes need multiple lines
+            pdf.set_font("Arial", "", 8.5)
+            notes_text_width = pdf.get_string_width(notes)
+            
+            if notes_text_width <= notes_value_width:
+                # Single line - normal height
+                cell_height = 5
+                pdf.set_font("Arial", "B", 8.5)
+                pdf.cell(usable_width * 0.10, cell_height, "NOTES:", border=1, align="C")
+                pdf.set_font("Arial", "", 8.5)
+                pdf.cell(usable_width * 0.90, cell_height, notes, border=1)
+                pdf.ln(2)
+            else:
+                # Multi-line notes - calculate needed height using word-based wrapping
+                # Split text into words for better line breaks
+                words = notes.split()
+                lines = []
+                current_line = ""
+                
+                # Build lines by adding words until width limit is reached
+                for word in words:
+                    test_line = current_line + (" " if current_line else "") + word
+                    test_width = pdf.get_string_width(test_line)
+                    
+                    if test_width <= notes_value_width:
+                        current_line = test_line
+                    else:
+                        if current_line:  # If current line has content, save it
+                            lines.append(current_line)
+                            current_line = word
+                        else:  # Single word is too long, need to break it
+                            # For very long single words, break by characters
+                            while word:
+                                char_line = ""
+                                for char in word:
+                                    if pdf.get_string_width(char_line + char) <= notes_value_width:
+                                        char_line += char
+                                    else:
+                                        break
+                                if char_line:
+                                    lines.append(char_line)
+                                    word = word[len(char_line):]
+                                else:
+                                    # Single character is too wide (shouldn't happen)
+                                    lines.append(word[0])
+                                    word = word[1:]
+                            current_line = ""
+                
+                # Add the last line if it has content
+                if current_line:
+                    lines.append(current_line)
+                
+                lines_needed = len(lines)
+                cell_height = 5 * lines_needed
+                
+                print(f"Notes text: '{notes}'")
+                print(f"Split into {lines_needed} lines:")
+                for i, line in enumerate(lines):
+                    print(f"  Line {i+1}: '{line}'")
+                
+                # Store current position
+                current_x = pdf.get_x()
+                current_y = pdf.get_y()
+                
+                # Draw cell borders first
+                pdf.set_font("Arial", "B", 8.5)
+                pdf.cell(usable_width * 0.10, cell_height, "", border=1)  # Notes label cell
+                pdf.set_font("Arial", "", 8.5)
+                pdf.cell(usable_width * 0.90, cell_height, "", border=1)  # Notes value cell
+                
+                # Add NOTES label (centered vertically)
+                label_y_offset = (cell_height - 5) / 2
+                pdf.set_xy(current_x, current_y + label_y_offset)
+                pdf.set_font("Arial", "B", 8.5)
+                pdf.cell(usable_width * 0.10, 5, "NOTES:", align="C")
+                
+                # Add multi-line notes value using the word-wrapped lines
+                pdf.set_font("Arial", "", 8.5)
+                for line_num, line_text in enumerate(lines):
+                    # Calculate Y position for this line (centered within the multi-line area)
+                    line_y = current_y + (line_num * 5) + ((cell_height - (lines_needed * 5)) / 2)
+                    pdf.set_xy(current_x + (usable_width * 0.10) + 1, line_y)
+                    pdf.cell((usable_width * 0.90) - 2, 5, line_text, align="L")
+                
+                # Move to next section
+                pdf.set_xy(current_x, current_y + cell_height)
+                pdf.ln(2)
 
             # Enhanced logo color table with actual colors
             logo_colors = logo_info['logo_colors'] if logo_info else None
@@ -1070,7 +1167,10 @@ def upload_file():
                 file_name = logo_info['file_name']
             elif "FILE NAME" in group.columns:
                 file_name = safe_get(group["FILE NAME"].iloc[0])
-            pdf.cell(usable_width - 25, 5, file_name, border=1)
+            
+            # Truncate file name to use 95% of available space
+            file_name_display = truncate_text(file_name, pdf, (usable_width - 25) * 0.95)
+            pdf.cell(usable_width - 25, 5, file_name_display, border=1)
             pdf.ln(8)
 
             # Add logo images based on preserved SKU number and pass logo_info
