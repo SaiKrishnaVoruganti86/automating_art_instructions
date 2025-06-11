@@ -711,13 +711,15 @@ def upload_file():
             pdf.set_auto_page_break(auto=True, margin=0.8)
             pdf.set_font("Arial", "", 8.5)
 
-            client_name = truncate_text(safe_get(group["Customer/Vendor Name"].iloc[0]), pdf, 72)
             due_date = format_date_consistently(group["Due Date"].iloc[0])
 
             full_width = 190
             usable_width = full_width - (2 * 0.8)
             left_width = full_width * 0.75
             right_width = full_width - left_width
+
+            # Now calculate client_name after left_width is defined
+            client_name = truncate_text(safe_get(group["Customer/Vendor Name"].iloc[0]), pdf, (left_width - 20) * 0.95)
 
             pdf.set_font("Arial", "B", 10)
             pdf.cell(left_width, 8, "ART INSTRUCTIONS", border=1, align="C")
@@ -738,7 +740,8 @@ def upload_file():
             pdf.set_font("Arial", "B", 8.5)
             pdf.cell(20, 6, "SO#:", border=1, align="C")
             pdf.set_font("Arial", "", 8.5)
-            pdf.cell(so_section_width - 20, 6, str(doc_num), border=1)
+            so_display = truncate_text(str(doc_num), pdf, (so_section_width - 20) * 0.95)
+            pdf.cell(so_section_width - 20, 6, so_display, border=1)
 
             pdf.set_font("Arial", "B", 8.5)
             pdf.cell(15, 6, "DATE:", border=1, align="C")
