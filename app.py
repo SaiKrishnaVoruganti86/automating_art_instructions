@@ -916,7 +916,7 @@ def upload_file():
                 pdf.set_xy(current_x, current_y + cell_height)
                 pdf.ln()
             
-            pdf.ln(7)
+            pdf.ln(2)
 
             # Enhanced logo section with database lookup and multi-line support
             logo_info = get_logo_info(logo_sku_str)
@@ -1050,7 +1050,9 @@ def upload_file():
             
             # Move to next section
             pdf.set_xy(current_x, current_y + cell_height)
-            pdf.ln(7)
+            
+            # Minimal consistent spacing after logo section
+            pdf.ln(2)
 
             # Enhanced notes section with multi-line support
             pdf.set_font("Arial", "B", 8.5)
@@ -1151,12 +1153,15 @@ def upload_file():
                 
                 # Move to next section
                 pdf.set_xy(current_x, current_y + cell_height)
+                
+                # Minimal consistent spacing after notes section
                 pdf.ln(2)
 
             # Enhanced logo color table with actual colors
             logo_colors = logo_info['logo_colors'] if logo_info else None
             add_logo_color_table(pdf, logo_colors)
 
+            # Minimal consistent spacing after logo color table
             pdf.ln(2)
             pdf.set_font("Arial", "B", 8.5)
             pdf.cell(25, 5, "FILE NAME:", border=1, align="C")
@@ -1171,7 +1176,9 @@ def upload_file():
             # Truncate file name to use 95% of available space
             file_name_display = truncate_text(file_name, pdf, (usable_width - 25) * 0.95)
             pdf.cell(usable_width - 25, 5, file_name_display, border=1)
-            pdf.ln(8)
+            
+            # Minimal consistent spacing after file name table
+            pdf.ln(2)
 
             # Add logo images based on preserved SKU number and pass logo_info
             pdf.ln(5)  # Add some space before images
