@@ -791,54 +791,256 @@ def upload_file():
                 
                 total_qty += qty
 
-            # Display grouped results
+            # Display grouped results with enhanced formatting
             pdf.set_font("Arial", "", 8.5)
             for group_key, group_data in color_desc_groups.items():
                 color_display = truncate_text(group_data['color'], pdf, COLOR_WIDTH * 0.90)
-                desc_display = group_data['description']
+                desc_display = truncate_text(group_data['description'], pdf, DESC_WIDTH * 0.90)
                 qty_display = str(int(group_data['quantity']))
                 
-                pdf.cell(COLOR_WIDTH, 5, color_display, 1, align="C")
-                pdf.cell(DESC_WIDTH, 5, desc_display, 1, align="C")
-                pdf.cell(QTY_WIDTH, 5, qty_display, 1, align="C")
-                pdf.ln()
+                # Debug output to check truncation
+                print(f"Original description: '{group_data['description']}'")
+                print(f"Truncated description: '{desc_display}'")
+                print(f"Available width: {DESC_WIDTH * 0.90}")
+                print(f"Text width: {pdf.get_string_width(desc_display)}")
+                
+                # Calculate if quantity needs multiple lines
+                qty_width = pdf.get_string_width(qty_display)
+                qty_cell_width = QTY_WIDTH * 0.95  # Use 95% of quantity cell width
+                
+                if qty_width <= qty_cell_width:
+                    # Single line - normal height
+                    cell_height = 5
+                    pdf.cell(COLOR_WIDTH, cell_height, color_display, 1, align="C")
+                    pdf.cell(DESC_WIDTH, cell_height, desc_display, 1, align="C")
+                    pdf.cell(QTY_WIDTH, cell_height, qty_display, 1, align="C")
+                    pdf.ln()
+                else:
+                    # Multi-line quantity - calculate needed height
+                    lines_needed = int(qty_width / qty_cell_width) + 1
+                    cell_height = 5 * lines_needed
+                    
+                    # Store current position
+                    current_x = pdf.get_x()
+                    current_y = pdf.get_y()
+                    
+                    # Draw color and description cells with increased height
+                    pdf.cell(COLOR_WIDTH, cell_height, color_display, 1, align="C")
+                    pdf.cell(DESC_WIDTH, cell_height, desc_display, 1, align="C")
+                    
+                    # Draw quantity cell border first
+                    pdf.cell(QTY_WIDTH, cell_height, "", 1)
+                    
+                    # Now add multi-line quantity text
+                    pdf.set_xy(current_x + COLOR_WIDTH + DESC_WIDTH + 1, current_y + 1)
+                    
+                    # Split quantity into chunks that fit
+                    qty_chars = list(qty_display)
+                    chars_per_line = int(len(qty_chars) / lines_needed)
+                    
+                    for line_num in range(lines_needed):
+                        start_idx = line_num * chars_per_line
+                        if line_num == lines_needed - 1:  # Last line gets remaining chars
+                            line_text = ''.join(qty_chars[start_idx:])
+                        else:
+                            line_text = ''.join(qty_chars[start_idx:start_idx + chars_per_line])
+                        
+                        pdf.set_x(current_x + COLOR_WIDTH + DESC_WIDTH + 1)
+                        pdf.cell(QTY_WIDTH - 2, 5, line_text, 0, align="C")
+                        if line_num < lines_needed - 1:  # Don't move down after last line
+                            pdf.ln(5)
+                    
+                    # Move to next row
+                    pdf.set_xy(current_x, current_y + cell_height)
 
+            # Enhanced total row with multi-line support (immediately after the loop, no extra line break)
             pdf.set_font("Arial", "B", 8.5)
-            pdf.cell(COLOR_WIDTH, 5, "", 1)
-            pdf.cell(DESC_WIDTH, 5, "TOTAL:", 1, align="C")
-            pdf.cell(QTY_WIDTH, 5, str(int(total_qty)), 1, align="C")
+            total_display = str(int(total_qty))
+            
+            # Calculate if total needs multiple lines
+            total_width = pdf.get_string_width(total_display)
+            total_cell_width = QTY_WIDTH * 0.95  # Use 95% of quantity cell width
+            
+            if total_width <= total_cell_width:
+                # Single line - normal height
+                cell_height = 5
+                pdf.cell(COLOR_WIDTH, cell_height, "", 1)
+                pdf.cell(DESC_WIDTH, cell_height, "TOTAL:", 1, align="C")
+                pdf.cell(QTY_WIDTH, cell_height, total_display, 1, align="C")
+                pdf.ln()
+            else:
+                # Multi-line total - calculate needed height
+                lines_needed = int(total_width / total_cell_width) + 1
+                cell_height = 5 * lines_needed
+                
+                # Store current position
+                current_x = pdf.get_x()
+                current_y = pdf.get_y()
+                
+                # Draw empty color cell and description cell with increased height
+                pdf.cell(COLOR_WIDTH, cell_height, "", 1)
+                pdf.cell(DESC_WIDTH, cell_height, "TOTAL:", 1, align="C")
+                
+                # Draw total cell border first
+                pdf.cell(QTY_WIDTH, cell_height, "", 1)
+                
+                # Now add multi-line total text
+                pdf.set_xy(current_x + COLOR_WIDTH + DESC_WIDTH + 1, current_y + 1)
+                
+                # Split total into chunks that fit
+                total_chars = list(total_display)
+                chars_per_line = int(len(total_chars) / lines_needed)
+                
+                for line_num in range(lines_needed):
+                    start_idx = line_num * chars_per_line
+                    if line_num == lines_needed - 1:  # Last line gets remaining chars
+                        line_text = ''.join(total_chars[start_idx:])
+                    else:
+                        line_text = ''.join(total_chars[start_idx:start_idx + chars_per_line])
+                    
+                    pdf.set_x(current_x + COLOR_WIDTH + DESC_WIDTH + 1)
+                    pdf.cell(QTY_WIDTH - 2, 5, line_text, 0, align="C")
+                    if line_num < lines_needed - 1:  # Don't move down after last line
+                        pdf.ln(5)
+                
+                # Move to next section
+                pdf.set_xy(current_x, current_y + cell_height)
+                pdf.ln()
+            
             pdf.ln(7)
 
-            # Enhanced logo section with database lookup (using preserved SKU format)
+            # Enhanced logo section with database lookup and multi-line support
             logo_info = get_logo_info(logo_sku_str)
             
-            pdf.set_font("Arial", "B", 8.5)
-            pdf.cell(18.89, 5, "LOGO SKU:", border=1, align="C")
-            pdf.set_font("Arial", "", 8.5)
-            logo_display = truncate_text(logo_sku_str, pdf, 15.11 * 0.90)
-            pdf.cell(15.11, 5, logo_display, border=1, align="C")
-
-            pdf.set_font("Arial", "B", 8.5)
-            pdf.cell(28.34, 5, "LOGO POSITION:", border=1, align="C")
-            pdf.set_font("Arial", "", 8.5)
-            # Use logo position from database if available, otherwise from original data
+            # Prepare values for multi-line processing
+            logo_display = logo_sku_str
             logo_pos = ""
             if logo_info and logo_info['logo_position']:
                 logo_pos = logo_info['logo_position']
             elif "LOGO POSITION" in group.columns:
                 logo_pos = safe_get(group["LOGO POSITION"].iloc[0])
-            pdf.cell(83.12, 5, logo_pos, border=1)
-
-            pdf.set_font("Arial", "B", 8.5)
-            pdf.cell(24.56, 5, "STITCH COUNT:", border=1, align="C")
-            pdf.set_font("Arial", "", 8.5)
-            # Use stitch count from database if available, otherwise from original data
+            
             stitch_count = ""
             if logo_info and logo_info['stitch_count']:
-                stitch_count = logo_info['stitch_count']
+                stitch_count = str(logo_info['stitch_count'])
             elif "STITCH COUNT" in group.columns:
                 stitch_count = safe_get(group["STITCH COUNT"].iloc[0])
-            pdf.cell(18.89, 5, str(stitch_count), border=1)
+            
+            # Calculate available widths for each field (95% of cell width)
+            logo_sku_width = 15.11 * 0.95
+            logo_pos_width = 83.12 * 0.95
+            stitch_count_width = 18.89 * 0.95
+            
+            # Check which fields need multiple lines
+            pdf.set_font("Arial", "", 8.5)
+            logo_text_width = pdf.get_string_width(logo_display)
+            pos_text_width = pdf.get_string_width(logo_pos)
+            stitch_text_width = pdf.get_string_width(stitch_count)
+            
+            # Calculate lines needed for each field
+            logo_lines = max(1, int(logo_text_width / logo_sku_width) + 1) if logo_text_width > logo_sku_width else 1
+            pos_lines = max(1, int(pos_text_width / logo_pos_width) + 1) if pos_text_width > logo_pos_width else 1
+            stitch_lines = max(1, int(stitch_text_width / stitch_count_width) + 1) if stitch_text_width > stitch_count_width else 1
+            
+            # Use the maximum lines needed for consistent row height
+            max_lines = max(logo_lines, pos_lines, stitch_lines)
+            cell_height = 5 * max_lines
+            
+            # Store current position
+            current_x = pdf.get_x()
+            current_y = pdf.get_y()
+            
+            # Draw cell borders first
+            pdf.set_font("Arial", "B", 8.5)
+            pdf.cell(18.89, cell_height, "", border=1)  # Logo SKU label cell
+            pdf.set_font("Arial", "", 8.5)
+            pdf.cell(15.11, cell_height, "", border=1)  # Logo SKU value cell
+            pdf.set_font("Arial", "B", 8.5)
+            pdf.cell(28.34, cell_height, "", border=1)  # Logo Position label cell
+            pdf.set_font("Arial", "", 8.5)
+            pdf.cell(83.12, cell_height, "", border=1)  # Logo Position value cell
+            pdf.set_font("Arial", "B", 8.5)
+            pdf.cell(24.56, cell_height, "", border=1)  # Stitch Count label cell
+            pdf.set_font("Arial", "", 8.5)
+            pdf.cell(18.89, cell_height, "", border=1)  # Stitch Count value cell
+            
+            # Now add the labels (centered vertically)
+            label_y_offset = (cell_height - 5) / 2
+            
+            # Logo SKU label
+            pdf.set_xy(current_x, current_y + label_y_offset)
+            pdf.set_font("Arial", "B", 8.5)
+            pdf.cell(18.89, 5, "LOGO SKU:", align="C")
+            
+            # Logo Position label
+            pdf.set_xy(current_x + 18.89 + 15.11, current_y + label_y_offset)
+            pdf.set_font("Arial", "B", 8.5)
+            pdf.cell(28.34, 5, "LOGO POSITION:", align="C")
+            
+            # Stitch Count label
+            pdf.set_xy(current_x + 18.89 + 15.11 + 28.34 + 83.12, current_y + label_y_offset)
+            pdf.set_font("Arial", "B", 8.5)
+            pdf.cell(24.56, 5, "STITCH COUNT:", align="C")
+            
+            # Add multi-line values
+            pdf.set_font("Arial", "", 8.5)
+            
+            # Logo SKU value (multi-line if needed)
+            if logo_lines > 1:
+                logo_chars = list(logo_display)
+                chars_per_line = max(1, len(logo_chars) // logo_lines)
+                for line_num in range(logo_lines):
+                    start_idx = line_num * chars_per_line
+                    if line_num == logo_lines - 1:
+                        line_text = ''.join(logo_chars[start_idx:])
+                    else:
+                        line_text = ''.join(logo_chars[start_idx:start_idx + chars_per_line])
+                    
+                    line_y = current_y + (line_num * 5) + ((cell_height - (logo_lines * 5)) / 2)
+                    pdf.set_xy(current_x + 18.89 + 1, line_y)
+                    pdf.cell(15.11 - 2, 5, line_text, align="C")
+            else:
+                pdf.set_xy(current_x + 18.89 + 1, current_y + label_y_offset)
+                pdf.cell(15.11 - 2, 5, logo_display, align="C")
+            
+            # Logo Position value (multi-line if needed)
+            if pos_lines > 1:
+                pos_chars = list(logo_pos)
+                chars_per_line = max(1, len(pos_chars) // pos_lines)
+                for line_num in range(pos_lines):
+                    start_idx = line_num * chars_per_line
+                    if line_num == pos_lines - 1:
+                        line_text = ''.join(pos_chars[start_idx:])
+                    else:
+                        line_text = ''.join(pos_chars[start_idx:start_idx + chars_per_line])
+                    
+                    line_y = current_y + (line_num * 5) + ((cell_height - (pos_lines * 5)) / 2)
+                    pdf.set_xy(current_x + 18.89 + 15.11 + 28.34 + 1, line_y)
+                    pdf.cell(83.12 - 2, 5, line_text, align="L")
+            else:
+                pdf.set_xy(current_x + 18.89 + 15.11 + 28.34 + 1, current_y + label_y_offset)
+                pdf.cell(83.12 - 2, 5, logo_pos, align="L")
+            
+            # Stitch Count value (multi-line if needed)
+            if stitch_lines > 1:
+                stitch_chars = list(stitch_count)
+                chars_per_line = max(1, len(stitch_chars) // stitch_lines)
+                for line_num in range(stitch_lines):
+                    start_idx = line_num * chars_per_line
+                    if line_num == stitch_lines - 1:
+                        line_text = ''.join(stitch_chars[start_idx:])
+                    else:
+                        line_text = ''.join(stitch_chars[start_idx:start_idx + chars_per_line])
+                    
+                    line_y = current_y + (line_num * 5) + ((cell_height - (stitch_lines * 5)) / 2)
+                    pdf.set_xy(current_x + 18.89 + 15.11 + 28.34 + 83.12 + 24.56 + 1, line_y)
+                    pdf.cell(18.89 - 2, 5, line_text, align="C")
+            else:
+                pdf.set_xy(current_x + 18.89 + 15.11 + 28.34 + 83.12 + 24.56 + 1, current_y + label_y_offset)
+                pdf.cell(18.89 - 2, 5, stitch_count, align="C")
+            
+            # Move to next section
+            pdf.set_xy(current_x, current_y + cell_height)
             pdf.ln(7)
 
             # Enhanced notes section
