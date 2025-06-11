@@ -1,21 +1,37 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Upload Excel - Art Instructions</title>
+    <title>Upload File - Art Instructions</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
 </head>
 <body class="bg-light">
 <div class="container mt-5">
     <div class="card p-4 shadow">
-        <h2 class="mb-4">Upload Excel for Art Instructions</h2>
+        <h2 class="mb-4">Upload File for Art Instructions</h2>
+        <p class="text-muted mb-3">
+            <strong>Supported formats:</strong> Excel files (.xlsx, .xls) and CSV files (.csv)
+        </p>
         <form method="POST" enctype="multipart/form-data">
             <div class="mb-3">
-                <input class="form-control" type="file" name="excel" accept=".xlsx,.xls" required>
+                <label for="dataFile" class="form-label">Select your data file:</label>
+                <input class="form-control" type="file" name="excel" id="dataFile" 
+                       accept=".xlsx,.xls,.csv" required>
+                <div class="form-text">
+                    Upload your Excel (.xlsx, .xls) or CSV (.csv) file containing art instruction data.
+                </div>
             </div>
-            <button class="btn btn-primary" type="submit">Generate ZIP</button>
+            <button class="btn btn-primary btn-lg" type="submit">
+                <i class="bi bi-file-earmark-pdf"></i> Generate Art Instructions PDFs
+            </button>
         </form>
+        
+        <div class="mt-4">
+            <h5>File Requirements:</h5>
+            <ul class="text-muted">
+                <li><strong>File size:</strong> Maximum recommended size is 50MB</li>
+            </ul>
+        </div>
     </div>
 </div>
 </body>

@@ -5,6 +5,7 @@ import os
 import zipfile
 from werkzeug.utils import secure_filename
 from PIL import Image  # Added for image dimension detection
+from datetime import datetime  # Added for date formatting
 
 app = Flask(__name__)
 UPLOAD_FOLDER = "uploads"
@@ -116,6 +117,75 @@ def find_logo_images_by_sku(logo_sku):
     found_images.sort(key=lambda x: x['suffix'])
     
     return found_images
+
+def format_date_consistently(date_value):
+    """Convert various date formats to MM/dd/yy format"""
+    if pd.isna(date_value) or date_value == "":
+        return ""
+    
+    try:
+        # Handle different input types
+        if isinstance(date_value, (int, float)):
+            # Excel serial date number
+            if date_value > 40000:  # Reasonable range for Excel dates (2009+)
+                # Convert Excel serial date to Python datetime
+                excel_epoch = datetime(1899, 12, 30)
+                date_obj = excel_epoch + pd.Timedelta(days=date_value)
+            else:
+                return str(int(date_value))
+        elif isinstance(date_value, str):
+            # String date - try to parse various formats
+            date_str = str(date_value).strip()
+            
+            # If it's already in MM/dd/yy format, return as-is
+            if len(date_str) == 8 and date_str.count('/') == 2:
+                parts = date_str.split('/')
+                if len(parts[2]) == 2:  # Already in MM/dd/yy format
+                    return date_str
+            
+            # Try to parse the string as a date
+            for fmt in ['%Y-%m-%d', '%m/%d/%Y', '%m/%d/%y', '%Y/%m/%d', '%d/%m/%Y']:
+                try:
+                    date_obj = datetime.strptime(date_str, fmt)
+                    break
+                except ValueError:
+                    continue
+            else:
+                return date_str
+        else:
+            date_obj = pd.to_datetime(date_value)
+        
+        # Format as MM/dd/yy
+        return date_obj.strftime('%m/%d/%y')
+        
+    except Exception as e:
+        print(f"Error formatting date '{date_value}': {e}")
+        return str(date_value)
+
+def read_file_with_format_detection(file_path):
+    """Read Excel or CSV file"""
+    file_extension = os.path.splitext(file_path)[1].lower()
+    
+    try:
+        if file_extension == '.csv':
+            df = pd.read_csv(file_path, dtype={'LOGO': str})
+            print(f"Successfully read CSV file: {file_path}")
+        else:
+            df = pd.read_excel(file_path, dtype={'LOGO': str})
+            print(f"Successfully read Excel file: {file_path}")
+        return df
+    except:
+        # Fallback
+        try:
+            if file_extension == '.csv':
+                df = pd.read_csv(file_path)
+            else:
+                df = pd.read_excel(file_path)
+            if 'LOGO' in df.columns:
+                df['LOGO'] = df['LOGO'].astype(str)
+            return df
+        except Exception as e:
+            raise e
 
 def safe_get(value):
     return "" if pd.isna(value) else str(value)
@@ -579,16 +649,8 @@ def upload_file():
         file_path = os.path.join(UPLOAD_FOLDER, filename)
         file.save(file_path)
 
-        # Read Excel file with LOGO column as string to preserve leading zeros
-        try:
-            # First, try reading with LOGO as string type
-            df = pd.read_excel(file_path, dtype={'LOGO': str})
-        except:
-            # Fallback: read normally and convert LOGO to string
-            df = pd.read_excel(file_path)
-            if 'LOGO' in df.columns:
-                df['LOGO'] = df['LOGO'].astype(str)
-        
+        # Read Excel or CSV file with LOGO column as string to preserve leading zeros
+        df = read_file_with_format_detection(file_path)
         df.columns = [col.strip() for col in df.columns]
         
         # Clean and preserve LOGO format
@@ -608,10 +670,9 @@ def upload_file():
                 if logo_str in ['', 'nan', 'NaN', '0', '0000']:
                     return ""
                 
-                # IMPORTANT: If you want automatic padding for short numeric values,
-                # uncomment the lines below. This will convert "9" to "0009"
-                # if logo_str.isdigit() and len(logo_str) < 4:
-                #     logo_str = logo_str.zfill(4)  # Pad to 4 digits
+                # Auto-pad numeric values to 4 digits for consistency
+                if logo_str.isdigit() and len(logo_str) < 4:
+                    logo_str = logo_str.zfill(4)  # Pad to 4 digits: "9" -> "0009"
                     
                 return logo_str
             
@@ -625,14 +686,6 @@ def upload_file():
             # Show sample of LOGO values for debugging
             sample_logos = df['LOGO'].dropna().unique()[:10]
             print(f"Sample LOGO values detected: {list(sample_logos)}")
-            
-            # Warning if we detect short numeric values that might need leading zeros
-            short_numeric = [logo for logo in sample_logos if logo.isdigit() and len(logo) < 4]
-            if short_numeric:
-                print(f"⚠️  WARNING: Found short numeric LOGO values that might need leading zeros: {short_numeric}")
-                print("   If these should have leading zeros (e.g., '9' should be '0009'):")
-                print("   1. Format the LOGO column as Text in Excel before entering data")
-                print("   2. Or uncomment the auto-padding code in clean_logo_value function")
         
         # Group by both Document Number AND Logo SKU to handle multiple logos per SO
         grouped = df.groupby(["Document Number", "LOGO"])
@@ -659,7 +712,7 @@ def upload_file():
             pdf.set_font("Arial", "", 8.5)
 
             client_name = truncate_text(safe_get(group["Customer/Vendor Name"].iloc[0]), pdf, 72)
-            due_date = str(group["Due Date"].iloc[0]).split(" ")[0]
+            due_date = format_date_consistently(group["Due Date"].iloc[0])
 
             full_width = 190
             usable_width = full_width - (2 * 0.8)
