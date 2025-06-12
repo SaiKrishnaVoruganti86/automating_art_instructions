@@ -709,6 +709,12 @@ def upload_file():
             if pd.isna(logo_sku) or str(logo_sku).strip() in ["", "0", "0000"]:
                 print(f"Skipping Document {doc_num} - No valid logo SKU")
                 continue
+            
+            # Skip "Not Approved" orders using DueDateStatus column
+            due_date_status = safe_get(group["DueDateStatus"].iloc[0]) if "DueDateStatus" in group.columns else ""
+            if due_date_status.strip().upper() == "NOT APPROVED":
+                print(f"Skipping Document {doc_num} - Status: Not Approved")
+                continue
                 
             # Preserve original logo SKU format
             logo_sku_str = str(logo_sku).strip()
