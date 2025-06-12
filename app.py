@@ -227,12 +227,13 @@ def render_items_section(pdf, vendor_styles, total_width):
         pdf.ln()
 
 def add_logo_color_table(pdf, logo_colors=None):
-    """Enhanced logo color table with actual colors from database and truncation"""
+    """Enhanced logo color table with actual colors from database and truncation (using consistent width)"""
     pdf.ln(5)
-    total_width = 190.5 - (2 * 0.8)
-    logo_color_width = total_width * 0.20
-    number_width = total_width * 0.05
-    value_width = total_width * 0.35
+    # Use the same usable_width as other tables for consistent right margin
+    usable_width = 190 - (2 * 0.8)  # Same calculation as in main function
+    logo_color_width = usable_width * 0.20
+    number_width = usable_width * 0.05
+    value_width = usable_width * 0.35
 
     # First row: LOGO COLOR header
     pdf.set_font("Arial", "B", 8.5)
@@ -430,7 +431,7 @@ def calculate_optimal_layout(images, available_width, available_height, margin=5
     
     return layout
 
-def optimize_image_layout(image_info, available_width, available_height, margin=5):
+def optimize_image_layout(image_info, available_width, available_height, margin=5, max_width=91.9, max_height=58.1):
     """Optimize image layout to fit all images in available space"""
     num_images = len(image_info)
     if num_images == 0:
@@ -918,8 +919,33 @@ def upload_file():
             
             pdf.ln(2)
 
-            # Enhanced logo section with database lookup and multi-line support
+            # Enhanced logo section with database lookup and multi-line support (using full usable width)
             logo_info = get_logo_info(logo_sku_str)
+            
+            # Calculate proportional widths that add up to usable_width (more conservative sizing)
+            logo_sku_label_width = usable_width * 0.12   # Logo SKU label
+            logo_sku_value_width = usable_width * 0.08   # Logo SKU value  
+            logo_pos_label_width = usable_width * 0.18   # Logo Position label
+            logo_pos_value_width = usable_width * 0.42   # Logo Position value (reduced)
+            stitch_label_width = usable_width * 0.15     # Stitch Count label
+            stitch_value_width = usable_width * 0.05     # Stitch Count value (smaller, just for numbers)
+            
+            # Debug: verify total width doesn't exceed usable_width
+            total_logo_width = (logo_sku_label_width + logo_sku_value_width + 
+                              logo_pos_label_width + logo_pos_value_width + 
+                              stitch_label_width + stitch_value_width)
+            print(f"Logo section total width: {total_logo_width:.2f}mm, usable width: {usable_width:.2f}mm")
+            
+            # Ensure we don't exceed usable width (safety check)
+            if total_logo_width > usable_width:
+                scale_factor = usable_width / total_logo_width
+                logo_sku_label_width *= scale_factor
+                logo_sku_value_width *= scale_factor
+                logo_pos_label_width *= scale_factor
+                logo_pos_value_width *= scale_factor
+                stitch_label_width *= scale_factor
+                stitch_value_width *= scale_factor
+                print(f"Applied scaling factor: {scale_factor:.3f}")
             
             # Prepare values for multi-line processing
             logo_display = logo_sku_str
@@ -936,9 +962,9 @@ def upload_file():
                 stitch_count = safe_get(group["STITCH COUNT"].iloc[0])
             
             # Calculate available widths for each field (95% of cell width)
-            logo_sku_width = 15.11 * 0.95
-            logo_pos_width = 83.12 * 0.95
-            stitch_count_width = 18.89 * 0.95
+            logo_sku_width = logo_sku_value_width * 0.95
+            logo_pos_width = logo_pos_value_width * 0.95
+            stitch_count_width = stitch_value_width * 0.95
             
             # Check which fields need multiple lines
             pdf.set_font("Arial", "", 8.5)
@@ -959,19 +985,19 @@ def upload_file():
             current_x = pdf.get_x()
             current_y = pdf.get_y()
             
-            # Draw cell borders first
+            # Draw cell borders first (using proportional widths)
             pdf.set_font("Arial", "B", 8.5)
-            pdf.cell(18.89, cell_height, "", border=1)  # Logo SKU label cell
+            pdf.cell(logo_sku_label_width, cell_height, "", border=1)  # Logo SKU label cell
             pdf.set_font("Arial", "", 8.5)
-            pdf.cell(15.11, cell_height, "", border=1)  # Logo SKU value cell
+            pdf.cell(logo_sku_value_width, cell_height, "", border=1)  # Logo SKU value cell
             pdf.set_font("Arial", "B", 8.5)
-            pdf.cell(28.34, cell_height, "", border=1)  # Logo Position label cell
+            pdf.cell(logo_pos_label_width, cell_height, "", border=1)  # Logo Position label cell
             pdf.set_font("Arial", "", 8.5)
-            pdf.cell(83.12, cell_height, "", border=1)  # Logo Position value cell
+            pdf.cell(logo_pos_value_width, cell_height, "", border=1)  # Logo Position value cell
             pdf.set_font("Arial", "B", 8.5)
-            pdf.cell(24.56, cell_height, "", border=1)  # Stitch Count label cell
+            pdf.cell(stitch_label_width, cell_height, "", border=1)  # Stitch Count label cell
             pdf.set_font("Arial", "", 8.5)
-            pdf.cell(18.89, cell_height, "", border=1)  # Stitch Count value cell
+            pdf.cell(stitch_value_width, cell_height, "", border=1)  # Stitch Count value cell
             
             # Now add the labels (centered vertically)
             label_y_offset = (cell_height - 5) / 2
@@ -979,17 +1005,17 @@ def upload_file():
             # Logo SKU label
             pdf.set_xy(current_x, current_y + label_y_offset)
             pdf.set_font("Arial", "B", 8.5)
-            pdf.cell(18.89, 5, "LOGO SKU:", align="C")
+            pdf.cell(logo_sku_label_width, 5, "LOGO SKU:", align="C")
             
             # Logo Position label
-            pdf.set_xy(current_x + 18.89 + 15.11, current_y + label_y_offset)
+            pdf.set_xy(current_x + logo_sku_label_width + logo_sku_value_width, current_y + label_y_offset)
             pdf.set_font("Arial", "B", 8.5)
-            pdf.cell(28.34, 5, "LOGO POSITION:", align="C")
+            pdf.cell(logo_pos_label_width, 5, "LOGO POSITION:", align="C")
             
             # Stitch Count label
-            pdf.set_xy(current_x + 18.89 + 15.11 + 28.34 + 83.12, current_y + label_y_offset)
+            pdf.set_xy(current_x + logo_sku_label_width + logo_sku_value_width + logo_pos_label_width + logo_pos_value_width, current_y + label_y_offset)
             pdf.set_font("Arial", "B", 8.5)
-            pdf.cell(24.56, 5, "STITCH COUNT:", align="C")
+            pdf.cell(stitch_label_width, 5, "STITCH COUNT:", align="C")
             
             # Add multi-line values
             pdf.set_font("Arial", "", 8.5)
@@ -1006,11 +1032,11 @@ def upload_file():
                         line_text = ''.join(logo_chars[start_idx:start_idx + chars_per_line])
                     
                     line_y = current_y + (line_num * 5) + ((cell_height - (logo_lines * 5)) / 2)
-                    pdf.set_xy(current_x + 18.89 + 1, line_y)
-                    pdf.cell(15.11 - 2, 5, line_text, align="C")
+                    pdf.set_xy(current_x + logo_sku_label_width + 1, line_y)
+                    pdf.cell(logo_sku_value_width - 2, 5, line_text, align="C")
             else:
-                pdf.set_xy(current_x + 18.89 + 1, current_y + label_y_offset)
-                pdf.cell(15.11 - 2, 5, logo_display, align="C")
+                pdf.set_xy(current_x + logo_sku_label_width + 1, current_y + label_y_offset)
+                pdf.cell(logo_sku_value_width - 2, 5, logo_display, align="C")
             
             # Logo Position value (multi-line if needed)
             if pos_lines > 1:
@@ -1024,11 +1050,11 @@ def upload_file():
                         line_text = ''.join(pos_chars[start_idx:start_idx + chars_per_line])
                     
                     line_y = current_y + (line_num * 5) + ((cell_height - (pos_lines * 5)) / 2)
-                    pdf.set_xy(current_x + 18.89 + 15.11 + 28.34 + 1, line_y)
-                    pdf.cell(83.12 - 2, 5, line_text, align="L")
+                    pdf.set_xy(current_x + logo_sku_label_width + logo_sku_value_width + logo_pos_label_width + 1, line_y)
+                    pdf.cell(logo_pos_value_width - 2, 5, line_text, align="L")
             else:
-                pdf.set_xy(current_x + 18.89 + 15.11 + 28.34 + 1, current_y + label_y_offset)
-                pdf.cell(83.12 - 2, 5, logo_pos, align="L")
+                pdf.set_xy(current_x + logo_sku_label_width + logo_sku_value_width + logo_pos_label_width + 1, current_y + label_y_offset)
+                pdf.cell(logo_pos_value_width - 2, 5, logo_pos, align="L")
             
             # Stitch Count value (multi-line if needed)
             if stitch_lines > 1:
@@ -1042,11 +1068,11 @@ def upload_file():
                         line_text = ''.join(stitch_chars[start_idx:start_idx + chars_per_line])
                     
                     line_y = current_y + (line_num * 5) + ((cell_height - (stitch_lines * 5)) / 2)
-                    pdf.set_xy(current_x + 18.89 + 15.11 + 28.34 + 83.12 + 24.56 + 1, line_y)
-                    pdf.cell(18.89 - 2, 5, line_text, align="C")
+                    pdf.set_xy(current_x + logo_sku_label_width + logo_sku_value_width + logo_pos_label_width + logo_pos_value_width + stitch_label_width + 1, line_y)
+                    pdf.cell(stitch_value_width - 2, 5, line_text, align="C")
             else:
-                pdf.set_xy(current_x + 18.89 + 15.11 + 28.34 + 83.12 + 24.56 + 1, current_y + label_y_offset)
-                pdf.cell(18.89 - 2, 5, stitch_count, align="C")
+                pdf.set_xy(current_x + logo_sku_label_width + logo_sku_value_width + logo_pos_label_width + logo_pos_value_width + stitch_label_width + 1, current_y + label_y_offset)
+                pdf.cell(stitch_value_width - 2, 5, stitch_count, align="C")
             
             # Move to next section
             pdf.set_xy(current_x, current_y + cell_height)
