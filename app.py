@@ -917,18 +917,18 @@ def upload_file():
                 pdf.set_xy(current_x, current_y + cell_height)
                 pdf.ln()
             
-            pdf.ln(2)
+            pdf.ln(7)
 
             # Enhanced logo section with database lookup and multi-line support (using full usable width)
             logo_info = get_logo_info(logo_sku_str)
             
-            # Calculate proportional widths that add up to usable_width (more conservative sizing)
-            logo_sku_label_width = usable_width * 0.12   # Logo SKU label
-            logo_sku_value_width = usable_width * 0.08   # Logo SKU value  
-            logo_pos_label_width = usable_width * 0.18   # Logo Position label
-            logo_pos_value_width = usable_width * 0.42   # Logo Position value (reduced)
-            stitch_label_width = usable_width * 0.15     # Stitch Count label
-            stitch_value_width = usable_width * 0.05     # Stitch Count value (smaller, just for numbers)
+            # Calculate proportional widths that add up to usable_width (your specified sizing)
+            logo_sku_label_width = usable_width * 0.10   # Logo SKU label - 10%
+            logo_sku_value_width = usable_width * 0.08   # Logo SKU value - 8%
+            logo_pos_label_width = usable_width * 0.15   # Logo Position label - 15%
+            logo_pos_value_width = usable_width * 0.44   # Logo Position value - 44%
+            stitch_label_width = usable_width * 0.13     # Stitch Count label - 13%
+            stitch_value_width = usable_width * 0.10     # Stitch Count value - 10%
             
             # Debug: verify total width doesn't exceed usable_width
             total_logo_width = (logo_sku_label_width + logo_sku_value_width + 
