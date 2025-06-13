@@ -696,6 +696,51 @@ def upload_file():
             # Show sample of LOGO values for debugging
             sample_logos = df['LOGO'].dropna().unique()[:10]
             print(f"Sample LOGO values detected: {list(sample_logos)}")
+
+        # DEBUG: Check OPERATIONAL CODE column
+        print("=== DEBUGGING OPERATIONAL CODE COLUMN ===")
+        print(f"Available columns: {list(df.columns)}")
+
+        if 'OPERATIONAL CODE' in df.columns:
+            print("\nOPERATIONAL CODE column found!")
+            
+            # Show unique values and their types
+            unique_op_codes = df['OPERATIONAL CODE'].unique()
+            print(f"\nUnique OPERATIONAL CODE values ({len(unique_op_codes)} total):")
+            for i, code in enumerate(unique_op_codes[:20]):  # Show first 20
+                print(f"  {i+1}. '{code}' (type: {type(code)}, pandas null: {pd.isna(code)})")
+            
+            # Check rows where OPERATIONAL CODE might be 90
+            print(f"\nRows where OPERATIONAL CODE appears to be 90:")
+            # Try different ways to find 90
+            op_90_candidates = []
+            
+            # Method 1: Direct string comparison
+            op_90_str = df[df['OPERATIONAL CODE'].astype(str).str.strip() == '90']
+            op_90_candidates.extend(op_90_str.head(3).to_dict('records'))
+            
+            # Method 2: Numeric comparison (if possible)
+            try:
+                op_90_num = df[pd.to_numeric(df['OPERATIONAL CODE'], errors='coerce') == 90]
+                op_90_candidates.extend(op_90_num.head(3).to_dict('records'))
+            except:
+                pass
+            
+            print(f"Found {len(op_90_candidates)} potential rows with OPERATIONAL CODE = 90")
+            for i, row in enumerate(op_90_candidates[:5]):
+                doc_num = row['Document Number']
+                op_code = row['OPERATIONAL CODE']
+                list_codes = row.get('List of Operation Codes', 'N/A')
+                logo = row['LOGO']
+                print(f"    {i+1}. Doc: {doc_num}, OPERATIONAL CODE: '{op_code}' (type: {type(op_code)}), List: '{list_codes}', Logo: '{logo}'")
+
+        else:
+            print("OPERATIONAL CODE column NOT FOUND!")
+            print("Available columns:")
+            for col in df.columns:
+                print(f"  - '{col}'")
+
+        print("=== END DEBUG ===\n")
         
         # Group by both Document Number AND Logo SKU to handle multiple logos per SO
         grouped = df.groupby(["Document Number", "LOGO"])
@@ -704,22 +749,139 @@ def upload_file():
         for f in os.listdir(OUTPUT_FOLDER):
             os.remove(os.path.join(OUTPUT_FOLDER, f))
 
+        # ENHANCED FILTERING LOGIC WITH CORRECT ORDER
         for (doc_num, logo_sku), group in grouped:
-            # Skip entries with no logo or default logo
+            # Filter 1: Skip entries with no valid logo SKU
             if pd.isna(logo_sku) or str(logo_sku).strip() in ["", "0", "0000"]:
                 print(f"Skipping Document {doc_num} - No valid logo SKU")
                 continue
             
-            # Skip "Not Approved" orders using DueDateStatus column
+            # Filter 2: Skip "Not Approved" orders using DueDateStatus column
             due_date_status = safe_get(group["DueDateStatus"].iloc[0]) if "DueDateStatus" in group.columns else ""
             if due_date_status.strip().upper() == "NOT APPROVED":
                 print(f"Skipping Document {doc_num} - Status: Not Approved")
                 continue
-                
-            # Preserve original logo SKU format
+            
+            # Filter 3: Check LOGO validity first
             logo_sku_str = str(logo_sku).strip()
             
-            print(f"Processing Document {doc_num} with Logo SKU: {logo_sku_str}")
+            # LOGO is not valid if it's "0000", "0", or empty
+            if logo_sku_str in ["0000", "0", ""]:
+                print(f"Skipping Document {doc_num} - Invalid Logo SKU: '{logo_sku_str}'")
+                continue
+            
+            # Filter 4: Check OPERATIONAL CODE validity
+            operational_code = None
+            if "OPERATIONAL CODE" in group.columns:
+                # Get the operational code for this group (should be same for all rows in group)
+                op_code_raw = group["OPERATIONAL CODE"].iloc[0]
+                print(f"Document {doc_num} - Raw OPERATIONAL CODE: '{op_code_raw}' (type: {type(op_code_raw)})")
+                
+                if pd.notna(op_code_raw) and str(op_code_raw).strip():
+                    op_code_str = str(op_code_raw).strip()
+                    print(f"Document {doc_num} - OPERATIONAL CODE string: '{op_code_str}'")
+                    
+                    # OPERATIONAL CODE is not valid if it's "00", "0", or empty
+                    if op_code_str not in ["00", "0", ""]:
+                        try:
+                            # Handle both integer and float formats
+                            if '.' in op_code_str:
+                                operational_code = int(float(op_code_str))
+                            else:
+                                operational_code = int(op_code_str)
+                            print(f"Document {doc_num} - Parsed OPERATIONAL CODE: {operational_code}")
+                        except (ValueError, TypeError) as e:
+                            print(f"Document {doc_num} - Error parsing OPERATIONAL CODE '{op_code_str}': {e}")
+                    else:
+                        print(f"Document {doc_num} - OPERATIONAL CODE '{op_code_str}' is invalid (00, 0, or empty)")
+                else:
+                    print(f"Document {doc_num} - OPERATIONAL CODE is null or empty")
+            else:
+                print(f"Document {doc_num} - OPERATIONAL CODE column not found")
+            
+            # If OPERATIONAL CODE is not valid, skip
+            if operational_code is None:
+                print(f"Skipping Document {doc_num} - Invalid or missing Operational Code")
+                continue
+            
+            print(f"Document {doc_num} - Valid Logo: {logo_sku_str}, Valid Operational Code: {operational_code}")
+            
+            # Filter 5: Check OPERATIONAL CODE conditions
+            
+            # Sub-case 1: If OPERATIONAL CODE is 11, generate regardless of List of Operation Codes
+            if operational_code == 11:
+                print(f"✓ Document {doc_num} - Operational Code is 11, generating art instruction")
+            
+            # Sub-case 2: If OPERATIONAL CODE > 89, check List of Operation Codes
+            elif operational_code > 89:
+                print(f"Document {doc_num} - Operational Code {operational_code} > 89, checking List of Operation Codes")
+                
+                # Get List of Operation Codes
+                list_operation_codes = []
+                if "List of Operation Codes" in group.columns:
+                    list_codes_raw = group["List of Operation Codes"].iloc[0]
+                    print(f"Document {doc_num} - Raw List of Operation Codes: '{list_codes_raw}' (type: {type(list_codes_raw)})")
+                    
+                    if pd.notna(list_codes_raw) and str(list_codes_raw).strip():
+                        list_codes_str = str(list_codes_raw).strip()
+                        print(f"Document {doc_num} - List of Operation Codes string: '{list_codes_str}'")
+                        
+                        # Parse comma-separated codes
+                        if ',' in list_codes_str:
+                            individual_codes = list_codes_str.split(',')
+                            for individual_code in individual_codes:
+                                clean_code = individual_code.strip()
+                                if clean_code and clean_code.replace('.', '').isdigit():
+                                    try:
+                                        if '.' in clean_code:
+                                            list_operation_codes.append(int(float(clean_code)))
+                                        else:
+                                            list_operation_codes.append(int(clean_code))
+                                    except (ValueError, TypeError):
+                                        pass
+                        else:
+                            # Single code
+                            if list_codes_str.replace('.', '').isdigit():
+                                try:
+                                    if '.' in list_codes_str:
+                                        list_operation_codes.append(int(float(list_codes_str)))
+                                    else:
+                                        list_operation_codes.append(int(list_codes_str))
+                                except (ValueError, TypeError):
+                                    pass
+                    else:
+                        print(f"Document {doc_num} - List of Operation Codes is empty or null")
+                else:
+                    print(f"Document {doc_num} - List of Operation Codes column not found")
+                
+                print(f"Document {doc_num} - Parsed List of Operation Codes: {list_operation_codes}")
+                
+                # Check conditions for List of Operation Codes
+                if not list_operation_codes:
+                    print(f"Skipping Document {doc_num} - No valid List of Operation Codes found")
+                    continue
+                
+                # Must contain exactly one 11 (mandatory)
+                count_of_11 = list_operation_codes.count(11)
+                if count_of_11 != 1:
+                    print(f"Skipping Document {doc_num} - List must contain exactly one 11 (found {count_of_11})")
+                    continue
+                
+                # No operation code should be less than 60 (except 11, which is required)
+                codes_less_than_60 = [code for code in list_operation_codes if code < 60 and code != 11]
+                if codes_less_than_60:
+                    print(f"Skipping Document {doc_num} - List contains codes < 60 (excluding 11): {codes_less_than_60}")
+                    continue
+                
+                print(f"✓ Document {doc_num} - All List of Operation Codes conditions satisfied, generating art instruction")
+            
+            # Sub-case 3: OPERATIONAL CODE is anything other than 11 and not > 89
+            else:
+                print(f"Skipping Document {doc_num} - Operational Code {operational_code} is not 11 and not > 89")
+                continue
+            
+            # If we reach here, all conditions are satisfied
+            print(f"✓ PROCESSING Document {doc_num} with Logo SKU: {logo_sku_str}, Operational Code: {operational_code}")
             
             pdf = FPDF(orientation="P", unit="mm", format=(190.5, 254.0))
             pdf.set_margins(0.8, 0.8, 0.8)
@@ -1110,7 +1272,6 @@ def upload_file():
                 pdf.cell(usable_width * 0.10, cell_height, "NOTES:", border=1, align="C")
                 pdf.set_font("Arial", "", 8.5)
                 pdf.cell(usable_width * 0.90, cell_height, notes, border=1)
-                pdf.ln(2)
             else:
                 # Multi-line notes - calculate needed height using word-based wrapping
                 # Split text into words for better line breaks
