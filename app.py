@@ -646,6 +646,33 @@ def add_logo_images_to_pdf(pdf, logo_sku, logo_info=None):
         pdf.ln(12)
         pdf.set_text_color(0, 0, 0)  # Reset to black text
 
+def filter_by_sales_order(df, sales_order_filter):
+    """Filter dataframe by sales order number if provided (exact match only)"""
+    if not sales_order_filter or sales_order_filter.strip() == "":
+        return df
+    
+    sales_order_filter = sales_order_filter.strip()
+    print(f"Filtering by Sales Order (exact match): '{sales_order_filter}'")
+    
+    # Check if Document Number column exists
+    if 'Document Number' not in df.columns:
+        print("Warning: 'Document Number' column not found in data")
+        return pd.DataFrame()  # Return empty dataframe
+    
+    # Filter by exact match only
+    original_count = len(df)
+    filtered_df = df[df['Document Number'].astype(str).str.strip() == sales_order_filter]
+    
+    print(f"Sales Order filter result: {len(filtered_df)} rows found out of {original_count} total rows")
+    
+    if filtered_df.empty:
+        print(f"No exact match found for Sales Order: '{sales_order_filter}'")
+    else:
+        found_orders = filtered_df['Document Number'].unique()
+        print(f"Found Sales Orders: {list(found_orders)}")
+    
+    return filtered_df
+
 @app.route("/", methods=["GET", "POST"])
 def upload_file():
     # Load logo database on each request (or you could load it once at startup)
@@ -653,6 +680,8 @@ def upload_file():
     
     if request.method == "POST":
         file = request.files["excel"]
+        sales_order_filter = request.form.get("sales_order", "").strip()
+        
         if file.filename == "":
             return redirect(request.url)
         filename = secure_filename(file.filename)
@@ -662,6 +691,14 @@ def upload_file():
         # Read Excel or CSV file with LOGO column as string to preserve leading zeros
         df = read_file_with_format_detection(file_path)
         df.columns = [col.strip() for col in df.columns]
+        
+        # Apply sales order filter if provided
+        if sales_order_filter:
+            df = filter_by_sales_order(df, sales_order_filter)
+            if df.empty:
+                # Return to upload page with error message
+                return render_template("upload.html", 
+                                     error_message=f"No exact match found for Sales Order: '{sales_order_filter}'. Please enter the complete and exact sales order number.")
         
         # Clean and preserve LOGO format
         if 'LOGO' in df.columns:
@@ -748,6 +785,8 @@ def upload_file():
         # Clear output folder
         for f in os.listdir(OUTPUT_FOLDER):
             os.remove(os.path.join(OUTPUT_FOLDER, f))
+
+        pdf_count = 0  # Track number of PDFs generated
 
         # ENHANCED FILTERING LOGIC WITH CORRECT ORDER
         for (doc_num, logo_sku), group in grouped:
@@ -1384,6 +1423,16 @@ def upload_file():
             
             pdf.output(os.path.join(OUTPUT_FOLDER, filename))
             print(f"Generated PDF: {filename}")
+            pdf_count += 1
+
+        # Check if any PDFs were generated
+        if pdf_count == 0:
+            if sales_order_filter:
+                error_msg = f"No art instructions generated for Sales Order '{sales_order_filter}'. Please check that the sales order exists and meets the processing criteria."
+            else:
+                error_msg = "No art instructions generated. Please check that your data meets the processing criteria (valid logos, operational codes, etc.)."
+            
+            return render_template("upload.html", error_message=error_msg)
 
         # Create ZIP file
         zip_path = os.path.join(OUTPUT_FOLDER, ZIP_NAME)
@@ -1392,12 +1441,18 @@ def upload_file():
                 if fname.endswith(".pdf"):
                     zipf.write(os.path.join(OUTPUT_FOLDER, fname), fname)
 
-        return redirect(url_for("download_file"))
+        # Success message
+        success_msg = f"Successfully generated {pdf_count} art instruction PDF(s)"
+        if sales_order_filter:
+            success_msg += f" for Sales Order '{sales_order_filter}'"
+        
+        return redirect(url_for("download_file", success=success_msg))
 
     return render_template("upload.html")
 
 @app.route("/download")
 def download_file():
+    success_msg = request.args.get('success', '')
     return send_file(os.path.join(OUTPUT_FOLDER, ZIP_NAME), as_attachment=True)
 
 if __name__ == "__main__":
