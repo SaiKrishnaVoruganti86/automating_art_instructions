@@ -1,0 +1,7 @@
+Flask==2.3.3
+pandas==2.0.3
+fpdf2==2.7.5
+openpyxl==3.1.2
+Pillow==10.0.0
+Werkzeug==2.3.7
+xlrd==2.0.1
