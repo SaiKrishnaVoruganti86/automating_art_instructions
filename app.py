@@ -6,6 +6,7 @@ import zipfile
 from werkzeug.utils import secure_filename
 from PIL import Image  # Added for image dimension detection
 from datetime import datetime  # Added for date formatting
+from report_generator import ReportGenerator  # Import our new reporting module
 
 app = Flask(__name__)
 UPLOAD_FOLDER = "uploads"
@@ -673,6 +674,151 @@ def filter_by_sales_order(df, sales_order_filter):
     
     return filtered_df
 
+def validate_row_for_processing(row, report_data):
+    """
+    Validate a single row for processing and return validation result
+    Returns: (is_valid, error_message)
+    """
+    doc_num = safe_get(row.get("Document Number", ""))
+    logo_sku = safe_get(row.get("LOGO", ""))
+    
+    # Record entry for reporting
+    row_data = {
+        'Document Number': doc_num,
+        'LOGO': logo_sku,
+        'VENDOR STYLE': safe_get(row.get("VENDOR STYLE", "")),
+        'COLOR': safe_get(row.get("COLOR", "")),
+        'SUBCATEGORY': safe_get(row.get("SUBCATEGORY", "")),
+        'Quantity': safe_get(row.get("Quantity", "")),
+        'Customer/Vendor Name': safe_get(row.get("Customer/Vendor Name", "")),
+        'Due Date': safe_get(row.get("Due Date", "")),
+        'DueDateStatus': safe_get(row.get("DueDateStatus", "")),
+        'OPERATIONAL CODE': safe_get(row.get("OPERATIONAL CODE", "")),
+        'List of Operation Codes': safe_get(row.get("List of Operation Codes", "")),
+        'LOGO POSITION': safe_get(row.get("LOGO POSITION", "")),
+        'STITCH COUNT': safe_get(row.get("STITCH COUNT", "")),
+        'NOTES': safe_get(row.get("NOTES", "")),
+        'FILE NAME': safe_get(row.get("FILE NAME", ""))
+    }
+    
+    # Validation 1: Check DueDateStatus for "Not Approved"
+    due_date_status = safe_get(row.get("DueDateStatus", "")).strip().upper()
+    if due_date_status == "NOT APPROVED":
+        row_data['Execution Status'] = 'FAILED'
+        row_data['Error Message'] = 'Status: Not Approved'
+        report_data.append(row_data)
+        return False, "Status: Not Approved"
+    
+    # Validation 2: Check Logo SKU validity
+    logo_sku_str = str(logo_sku).strip()
+    if pd.isna(logo_sku) or logo_sku_str in ["", "0", "0000", "nan", "NaN"]:
+        row_data['Execution Status'] = 'FAILED'
+        row_data['Error Message'] = f'Invalid Logo SKU: "{logo_sku_str}"'
+        report_data.append(row_data)
+        return False, f'Invalid Logo SKU: "{logo_sku_str}"'
+    
+    # Validation 3: Check Operational Code validity
+    operational_code = None
+    op_code_raw = row.get("OPERATIONAL CODE")
+    
+    if pd.notna(op_code_raw) and str(op_code_raw).strip():
+        op_code_str = str(op_code_raw).strip()
+        
+        if op_code_str not in ["00", "0", ""]:
+            try:
+                if '.' in op_code_str:
+                    operational_code = int(float(op_code_str))
+                else:
+                    operational_code = int(op_code_str)
+            except (ValueError, TypeError):
+                row_data['Execution Status'] = 'FAILED'
+                row_data['Error Message'] = f'Invalid Operational Code format: "{op_code_str}"'
+                report_data.append(row_data)
+                return False, f'Invalid Operational Code format: "{op_code_str}"'
+        else:
+            row_data['Execution Status'] = 'FAILED'
+            row_data['Error Message'] = f'Invalid Operational Code: "{op_code_str}" (00, 0, or empty)'
+            report_data.append(row_data)
+            return False, f'Invalid Operational Code: "{op_code_str}" (00, 0, or empty)'
+    else:
+        row_data['Execution Status'] = 'FAILED'
+        row_data['Error Message'] = 'Missing or empty Operational Code'
+        report_data.append(row_data)
+        return False, "Missing or empty Operational Code"
+    
+    # Validation 4: Check Operational Code conditions
+    if operational_code == 11:
+        # Valid - Operational Code is 11
+        row_data['Execution Status'] = 'SUCCESS'
+        row_data['Error Message'] = ''
+        report_data.append(row_data)
+        return True, ""
+    elif operational_code > 89:
+        # Check List of Operation Codes
+        list_operation_codes = []
+        list_codes_raw = row.get("List of Operation Codes")
+        
+        if pd.notna(list_codes_raw) and str(list_codes_raw).strip():
+            list_codes_str = str(list_codes_raw).strip()
+            
+            # Parse comma-separated codes
+            if ',' in list_codes_str:
+                individual_codes = list_codes_str.split(',')
+                for individual_code in individual_codes:
+                    clean_code = individual_code.strip()
+                    if clean_code and clean_code.replace('.', '').isdigit():
+                        try:
+                            if '.' in clean_code:
+                                list_operation_codes.append(int(float(clean_code)))
+                            else:
+                                list_operation_codes.append(int(clean_code))
+                        except (ValueError, TypeError):
+                            pass
+            else:
+                # Single code
+                if list_codes_str.replace('.', '').isdigit():
+                    try:
+                        if '.' in list_codes_str:
+                            list_operation_codes.append(int(float(list_codes_str)))
+                        else:
+                            list_operation_codes.append(int(list_codes_str))
+                    except (ValueError, TypeError):
+                        pass
+        
+        # Validate List of Operation Codes
+        if not list_operation_codes:
+            row_data['Execution Status'] = 'FAILED'
+            row_data['Error Message'] = 'No valid List of Operation Codes found for Operational Code > 89'
+            report_data.append(row_data)
+            return False, "No valid List of Operation Codes found for Operational Code > 89"
+        
+        # Must contain exactly one 11
+        count_of_11 = list_operation_codes.count(11)
+        if count_of_11 != 1:
+            row_data['Execution Status'] = 'FAILED'
+            row_data['Error Message'] = f'List must contain exactly one 11 (found {count_of_11})'
+            report_data.append(row_data)
+            return False, f'List must contain exactly one 11 (found {count_of_11})'
+        
+        # No operation code should be less than 60 (except 11)
+        codes_less_than_60 = [code for code in list_operation_codes if code < 60 and code != 11]
+        if codes_less_than_60:
+            row_data['Execution Status'] = 'FAILED'
+            row_data['Error Message'] = f'List contains codes < 60 (excluding 11): {codes_less_than_60}'
+            report_data.append(row_data)
+            return False, f'List contains codes < 60 (excluding 11): {codes_less_than_60}'
+        
+        # Valid
+        row_data['Execution Status'] = 'SUCCESS'
+        row_data['Error Message'] = ''
+        report_data.append(row_data)
+        return True, ""
+    else:
+        row_data['Execution Status'] = 'FAILED'
+        row_data['Error Message'] = f'Operational Code {operational_code} is not 11 and not > 89'
+        report_data.append(row_data)
+        return False, f'Operational Code {operational_code} is not 11 and not > 89'
+
 @app.route("/", methods=["GET", "POST"])
 def upload_file():
     # Load logo database on each request (or you could load it once at startup)
@@ -691,6 +837,10 @@ def upload_file():
         # Read Excel or CSV file with LOGO column as string to preserve leading zeros
         df = read_file_with_format_detection(file_path)
         df.columns = [col.strip() for col in df.columns]
+        
+        # Initialize report generator
+        report_gen = ReportGenerator()
+        report_data = []  # List to store all row processing results
         
         # Apply sales order filter if provided
         if sales_order_filter:
@@ -724,706 +874,358 @@ def upload_file():
                 return logo_str
             
             df['LOGO'] = df['LOGO'].apply(clean_logo_value)
-            
-            # Filter out rows with empty/invalid logos
-            df = df[df['LOGO'] != ""]
-            
             print("LOGO column processed to preserve original format")
             
             # Show sample of LOGO values for debugging
             sample_logos = df['LOGO'].dropna().unique()[:10]
             print(f"Sample LOGO values detected: {list(sample_logos)}")
 
-        # DEBUG: Check OPERATIONAL CODE column
-        print("=== DEBUGGING OPERATIONAL CODE COLUMN ===")
-        print(f"Available columns: {list(df.columns)}")
-
-        if 'OPERATIONAL CODE' in df.columns:
-            print("\nOPERATIONAL CODE column found!")
-            
-            # Show unique values and their types
-            unique_op_codes = df['OPERATIONAL CODE'].unique()
-            print(f"\nUnique OPERATIONAL CODE values ({len(unique_op_codes)} total):")
-            for i, code in enumerate(unique_op_codes[:20]):  # Show first 20
-                print(f"  {i+1}. '{code}' (type: {type(code)}, pandas null: {pd.isna(code)})")
-            
-            # Check rows where OPERATIONAL CODE might be 90
-            print(f"\nRows where OPERATIONAL CODE appears to be 90:")
-            # Try different ways to find 90
-            op_90_candidates = []
-            
-            # Method 1: Direct string comparison
-            op_90_str = df[df['OPERATIONAL CODE'].astype(str).str.strip() == '90']
-            op_90_candidates.extend(op_90_str.head(3).to_dict('records'))
-            
-            # Method 2: Numeric comparison (if possible)
-            try:
-                op_90_num = df[pd.to_numeric(df['OPERATIONAL CODE'], errors='coerce') == 90]
-                op_90_candidates.extend(op_90_num.head(3).to_dict('records'))
-            except:
-                pass
-            
-            print(f"Found {len(op_90_candidates)} potential rows with OPERATIONAL CODE = 90")
-            for i, row in enumerate(op_90_candidates[:5]):
-                doc_num = row['Document Number']
-                op_code = row['OPERATIONAL CODE']
-                list_codes = row.get('List of Operation Codes', 'N/A')
-                logo = row['LOGO']
-                print(f"    {i+1}. Doc: {doc_num}, OPERATIONAL CODE: '{op_code}' (type: {type(op_code)}), List: '{list_codes}', Logo: '{logo}'")
-
-        else:
-            print("OPERATIONAL CODE column NOT FOUND!")
-            print("Available columns:")
-            for col in df.columns:
-                print(f"  - '{col}'")
-
-        print("=== END DEBUG ===\n")
-        
-        # Group by both Document Number AND Logo SKU to handle multiple logos per SO
-        grouped = df.groupby(["Document Number", "LOGO"])
-
         # Clear output folder
         for f in os.listdir(OUTPUT_FOLDER):
             os.remove(os.path.join(OUTPUT_FOLDER, f))
 
         pdf_count = 0  # Track number of PDFs generated
-
-        # ENHANCED FILTERING LOGIC WITH CORRECT ORDER
-        for (doc_num, logo_sku), group in grouped:
-            # Filter 1: Skip entries with no valid logo SKU
-            if pd.isna(logo_sku) or str(logo_sku).strip() in ["", "0", "0000"]:
-                print(f"Skipping Document {doc_num} - No valid logo SKU")
+        
+        # Process each row for validation and reporting
+        for index, row in df.iterrows():
+            is_valid, error_msg = validate_row_for_processing(row, report_data)
+            
+            if not is_valid:
+                print(f"Row {index + 1}: {error_msg}")
                 continue
             
-            # Filter 2: Skip "Not Approved" orders using DueDateStatus column
-            due_date_status = safe_get(group["DueDateStatus"].iloc[0]) if "DueDateStatus" in group.columns else ""
-            if due_date_status.strip().upper() == "NOT APPROVED":
-                print(f"Skipping Document {doc_num} - Status: Not Approved")
-                continue
+            # If validation passes, continue with PDF generation
+            doc_num = safe_get(row["Document Number"])
+            logo_sku = safe_get(row["LOGO"])
             
-            # Filter 3: Check LOGO validity first
-            logo_sku_str = str(logo_sku).strip()
-            
-            # LOGO is not valid if it's "0000", "0", or empty
-            if logo_sku_str in ["0000", "0", ""]:
-                print(f"Skipping Document {doc_num} - Invalid Logo SKU: '{logo_sku_str}'")
-                continue
-            
-            # Filter 4: Check OPERATIONAL CODE validity
-            operational_code = None
-            if "OPERATIONAL CODE" in group.columns:
-                # Get the operational code for this group (should be same for all rows in group)
-                op_code_raw = group["OPERATIONAL CODE"].iloc[0]
-                print(f"Document {doc_num} - Raw OPERATIONAL CODE: '{op_code_raw}' (type: {type(op_code_raw)})")
-                
-                if pd.notna(op_code_raw) and str(op_code_raw).strip():
-                    op_code_str = str(op_code_raw).strip()
-                    print(f"Document {doc_num} - OPERATIONAL CODE string: '{op_code_str}'")
-                    
-                    # OPERATIONAL CODE is not valid if it's "00", "0", or empty
-                    if op_code_str not in ["00", "0", ""]:
-                        try:
-                            # Handle both integer and float formats
-                            if '.' in op_code_str:
-                                operational_code = int(float(op_code_str))
-                            else:
-                                operational_code = int(op_code_str)
-                            print(f"Document {doc_num} - Parsed OPERATIONAL CODE: {operational_code}")
-                        except (ValueError, TypeError) as e:
-                            print(f"Document {doc_num} - Error parsing OPERATIONAL CODE '{op_code_str}': {e}")
-                    else:
-                        print(f"Document {doc_num} - OPERATIONAL CODE '{op_code_str}' is invalid (00, 0, or empty)")
-                else:
-                    print(f"Document {doc_num} - OPERATIONAL CODE is null or empty")
-            else:
-                print(f"Document {doc_num} - OPERATIONAL CODE column not found")
-            
-            # If OPERATIONAL CODE is not valid, skip
-            if operational_code is None:
-                print(f"Skipping Document {doc_num} - Invalid or missing Operational Code")
-                continue
-            
-            print(f"Document {doc_num} - Valid Logo: {logo_sku_str}, Valid Operational Code: {operational_code}")
-            
-            # Filter 5: Check OPERATIONAL CODE conditions
-            
-            # Sub-case 1: If OPERATIONAL CODE is 11, generate regardless of List of Operation Codes
-            if operational_code == 11:
-                print(f"✓ Document {doc_num} - Operational Code is 11, generating art instruction")
-            
-            # Sub-case 2: If OPERATIONAL CODE > 89, check List of Operation Codes
-            elif operational_code > 89:
-                print(f"Document {doc_num} - Operational Code {operational_code} > 89, checking List of Operation Codes")
-                
-                # Get List of Operation Codes
-                list_operation_codes = []
-                if "List of Operation Codes" in group.columns:
-                    list_codes_raw = group["List of Operation Codes"].iloc[0]
-                    print(f"Document {doc_num} - Raw List of Operation Codes: '{list_codes_raw}' (type: {type(list_codes_raw)})")
-                    
-                    if pd.notna(list_codes_raw) and str(list_codes_raw).strip():
-                        list_codes_str = str(list_codes_raw).strip()
-                        print(f"Document {doc_num} - List of Operation Codes string: '{list_codes_str}'")
-                        
-                        # Parse comma-separated codes
-                        if ',' in list_codes_str:
-                            individual_codes = list_codes_str.split(',')
-                            for individual_code in individual_codes:
-                                clean_code = individual_code.strip()
-                                if clean_code and clean_code.replace('.', '').isdigit():
-                                    try:
-                                        if '.' in clean_code:
-                                            list_operation_codes.append(int(float(clean_code)))
-                                        else:
-                                            list_operation_codes.append(int(clean_code))
-                                    except (ValueError, TypeError):
-                                        pass
-                        else:
-                            # Single code
-                            if list_codes_str.replace('.', '').isdigit():
-                                try:
-                                    if '.' in list_codes_str:
-                                        list_operation_codes.append(int(float(list_codes_str)))
-                                    else:
-                                        list_operation_codes.append(int(list_codes_str))
-                                except (ValueError, TypeError):
-                                    pass
-                    else:
-                        print(f"Document {doc_num} - List of Operation Codes is empty or null")
-                else:
-                    print(f"Document {doc_num} - List of Operation Codes column not found")
-                
-                print(f"Document {doc_num} - Parsed List of Operation Codes: {list_operation_codes}")
-                
-                # Check conditions for List of Operation Codes
-                if not list_operation_codes:
-                    print(f"Skipping Document {doc_num} - No valid List of Operation Codes found")
-                    continue
-                
-                # Must contain exactly one 11 (mandatory)
-                count_of_11 = list_operation_codes.count(11)
-                if count_of_11 != 1:
-                    print(f"Skipping Document {doc_num} - List must contain exactly one 11 (found {count_of_11})")
-                    continue
-                
-                # No operation code should be less than 60 (except 11, which is required)
-                codes_less_than_60 = [code for code in list_operation_codes if code < 60 and code != 11]
-                if codes_less_than_60:
-                    print(f"Skipping Document {doc_num} - List contains codes < 60 (excluding 11): {codes_less_than_60}")
-                    continue
-                
-                print(f"✓ Document {doc_num} - All List of Operation Codes conditions satisfied, generating art instruction")
-            
-            # Sub-case 3: OPERATIONAL CODE is anything other than 11 and not > 89
-            else:
-                print(f"Skipping Document {doc_num} - Operational Code {operational_code} is not 11 and not > 89")
-                continue
-            
-            # If we reach here, all conditions are satisfied
-            print(f"✓ PROCESSING Document {doc_num} with Logo SKU: {logo_sku_str}, Operational Code: {operational_code}")
-            
-            pdf = FPDF(orientation="P", unit="mm", format=(190.5, 254.0))
-            pdf.set_margins(0.8, 0.8, 0.8)
-            pdf.add_page()
-            pdf.set_auto_page_break(auto=True, margin=0.8)
-            pdf.set_font("Arial", "", 8.5)
+            # Group logic will be handled below...
 
-            due_date = format_date_consistently(group["Due Date"].iloc[0])
+        # Group by both Document Number AND Logo SKU to handle multiple logos per SO
+        # Filter out invalid rows first
+        valid_df = df[df['LOGO'] != ""]  # Only rows with valid logos
+        
+        # Further filter by validation logic
+        final_valid_rows = []
+        for index, row in valid_df.iterrows():
+            temp_report = []
+            is_valid, _ = validate_row_for_processing(row, temp_report)
+            if is_valid:
+                final_valid_rows.append(row)
+        
+        if final_valid_rows:
+            valid_df = pd.DataFrame(final_valid_rows)
+            grouped = valid_df.groupby(["Document Number", "LOGO"])
 
-            full_width = 190
-            usable_width = full_width - (2 * 0.8)
-            left_width = full_width * 0.75
-            right_width = full_width - left_width
-
-            # Now calculate client_name after left_width is defined
-            client_name = truncate_text(safe_get(group["Customer/Vendor Name"].iloc[0]), pdf, (left_width - 20) * 0.95)
-
-            pdf.set_font("Arial", "B", 10)
-            pdf.cell(left_width, 8, "ART INSTRUCTIONS", border=1, align="C")
-            pdf.cell(right_width, 8, "", border=0)
-            pdf.image("static/jauniforms.png", x=pdf.get_x() - right_width + 3, y=pdf.get_y() + 1, w=right_width - 6)
-            pdf.ln()
-
-            pdf.set_font("Arial", "B", 8.5)
-            pdf.cell(20, 6, "CLIENT:", border=1, align="C")
-            pdf.set_font("Arial", "", 8.5)
-            pdf.cell(left_width - 20, 6, client_name, border=1)
-            pdf.cell(right_width, 6, "", border=0)
-            pdf.ln()
-
-            so_section_width = left_width * 0.70
-            date_section_width = left_width * 0.30
-
-            pdf.set_font("Arial", "B", 8.5)
-            pdf.cell(20, 6, "SO#:", border=1, align="C")
-            pdf.set_font("Arial", "", 8.5)
-            so_display = truncate_text(str(doc_num), pdf, (so_section_width - 20) * 0.95)
-            pdf.cell(so_section_width - 20, 6, so_display, border=1)
-
-            pdf.set_font("Arial", "B", 8.5)
-            pdf.cell(15, 6, "DATE:", border=1, align="C")
-            pdf.set_font("Arial", "", 8.5)
-            pdf.cell(date_section_width - 15, 6, due_date, border=1, align="C")
-            pdf.cell(right_width, 6, "", border=0)
-            pdf.ln(8)
-
-            vendor_styles = ", ".join(group["VENDOR STYLE"].dropna().astype(str).unique())
-            render_items_section(pdf, vendor_styles, usable_width)
-
-            pdf.ln(2)
-            COLOR_WIDTH = usable_width * 0.55
-            DESC_WIDTH = usable_width * 0.30
-            QTY_WIDTH = usable_width * 0.15
-
-            pdf.set_font("Arial", "B", 8.5)
-            pdf.cell(COLOR_WIDTH, 5, "COLOR", 1, align="C")
-            pdf.cell(DESC_WIDTH, 5, "DESCRIPTION", 1, align="C")
-            pdf.cell(QTY_WIDTH, 5, "QTY", 1, align="C")
-            pdf.ln()
-
-            # Group by COLOR and DESCRIPTION, then sum quantities
-            color_desc_groups = {}
-            total_qty = 0
-            
-            for _, row in group.iterrows():
-                color = safe_get(row.get("COLOR")).strip().upper()
-                desc = safe_get(row.get("SUBCATEGORY")).strip().upper()
-                
+            for (doc_num, logo_sku), group in grouped:
                 try:
-                    qty = float(row.get("Quantity", 0))
-                except:
-                    qty = 0
-                
-                # Create a key from color and description for grouping
-                group_key = f"{color}|{desc}"
-                
-                if group_key in color_desc_groups:
-                    color_desc_groups[group_key]['quantity'] += qty
-                else:
-                    color_desc_groups[group_key] = {
-                        'color': color,
-                        'description': desc,
-                        'quantity': qty
-                    }
-                
-                total_qty += qty
+                    # Generate PDF (your existing PDF generation code)
+                    pdf = FPDF(orientation="P", unit="mm", format=(190.5, 254.0))
+                    pdf.set_margins(0.8, 0.8, 0.8)
+                    pdf.add_page()
+                    pdf.set_auto_page_break(auto=True, margin=0.8)
+                    pdf.set_font("Arial", "", 8.5)
 
-            # Display grouped results with enhanced formatting
-            pdf.set_font("Arial", "", 8.5)
-            for group_key, group_data in color_desc_groups.items():
-                color_display = truncate_text(group_data['color'], pdf, COLOR_WIDTH * 0.90)
-                desc_display = truncate_text(group_data['description'], pdf, DESC_WIDTH * 0.90)
-                qty_display = str(int(group_data['quantity']))
-                
-                # Debug output to check truncation
-                print(f"Original description: '{group_data['description']}'")
-                print(f"Truncated description: '{desc_display}'")
-                print(f"Available width: {DESC_WIDTH * 0.90}")
-                print(f"Text width: {pdf.get_string_width(desc_display)}")
-                
-                # Calculate if quantity needs multiple lines
-                qty_width = pdf.get_string_width(qty_display)
-                qty_cell_width = QTY_WIDTH * 0.95  # Use 95% of quantity cell width
-                
-                if qty_width <= qty_cell_width:
-                    # Single line - normal height
-                    cell_height = 5
-                    pdf.cell(COLOR_WIDTH, cell_height, color_display, 1, align="C")
-                    pdf.cell(DESC_WIDTH, cell_height, desc_display, 1, align="C")
-                    pdf.cell(QTY_WIDTH, cell_height, qty_display, 1, align="C")
+                    due_date = format_date_consistently(group["Due Date"].iloc[0])
+
+                    full_width = 190
+                    usable_width = full_width - (2 * 0.8)
+                    left_width = full_width * 0.75
+                    right_width = full_width - left_width
+
+                    # Calculate client_name after left_width is defined
+                    client_name = truncate_text(safe_get(group["Customer/Vendor Name"].iloc[0]), pdf, (left_width - 20) * 0.95)
+
+                    pdf.set_font("Arial", "B", 10)
+                    pdf.cell(left_width, 8, "ART INSTRUCTIONS", border=1, align="C")
+                    pdf.cell(right_width, 8, "", border=0)
+                    pdf.image("static/jauniforms.png", x=pdf.get_x() - right_width + 3, y=pdf.get_y() + 1, w=right_width - 6)
                     pdf.ln()
-                else:
-                    # Multi-line quantity - calculate needed height
-                    lines_needed = int(qty_width / qty_cell_width) + 1
-                    cell_height = 5 * lines_needed
+
+                    pdf.set_font("Arial", "B", 8.5)
+                    pdf.cell(20, 6, "CLIENT:", border=1, align="C")
+                    pdf.set_font("Arial", "", 8.5)
+                    pdf.cell(left_width - 20, 6, client_name, border=1)
+                    pdf.cell(right_width, 6, "", border=0)
+                    pdf.ln()
+
+                    so_section_width = left_width * 0.70
+                    date_section_width = left_width * 0.30
+
+                    pdf.set_font("Arial", "B", 8.5)
+                    pdf.cell(20, 6, "SO#:", border=1, align="C")
+                    pdf.set_font("Arial", "", 8.5)
+                    so_display = truncate_text(str(doc_num), pdf, (so_section_width - 20) * 0.95)
+                    pdf.cell(so_section_width - 20, 6, so_display, border=1)
+
+                    pdf.set_font("Arial", "B", 8.5)
+                    pdf.cell(15, 6, "DATE:", border=1, align="C")
+                    pdf.set_font("Arial", "", 8.5)
+                    pdf.cell(date_section_width - 15, 6, due_date, border=1, align="C")
+                    pdf.cell(right_width, 6, "", border=0)
+                    pdf.ln(8)
+
+                    vendor_styles = ", ".join(group["VENDOR STYLE"].dropna().astype(str).unique())
+                    render_items_section(pdf, vendor_styles, usable_width)
+
+                    pdf.ln(2)
+                    COLOR_WIDTH = usable_width * 0.55
+                    DESC_WIDTH = usable_width * 0.30
+                    QTY_WIDTH = usable_width * 0.15
+
+                    pdf.set_font("Arial", "B", 8.5)
+                    pdf.cell(COLOR_WIDTH, 5, "COLOR", 1, align="C")
+                    pdf.cell(DESC_WIDTH, 5, "DESCRIPTION", 1, align="C")
+                    pdf.cell(QTY_WIDTH, 5, "QTY", 1, align="C")
+                    pdf.ln()
+
+                    # Group by COLOR and DESCRIPTION, then sum quantities
+                    color_desc_groups = {}
+                    total_qty = 0
                     
-                    # Store current position
-                    current_x = pdf.get_x()
-                    current_y = pdf.get_y()
-                    
-                    # Draw color and description cells with increased height
-                    pdf.cell(COLOR_WIDTH, cell_height, color_display, 1, align="C")
-                    pdf.cell(DESC_WIDTH, cell_height, desc_display, 1, align="C")
-                    
-                    # Draw quantity cell border first
-                    pdf.cell(QTY_WIDTH, cell_height, "", 1)
-                    
-                    # Now add multi-line quantity text
-                    pdf.set_xy(current_x + COLOR_WIDTH + DESC_WIDTH + 1, current_y + 1)
-                    
-                    # Split quantity into chunks that fit
-                    qty_chars = list(qty_display)
-                    chars_per_line = int(len(qty_chars) / lines_needed)
-                    
-                    for line_num in range(lines_needed):
-                        start_idx = line_num * chars_per_line
-                        if line_num == lines_needed - 1:  # Last line gets remaining chars
-                            line_text = ''.join(qty_chars[start_idx:])
-                        else:
-                            line_text = ''.join(qty_chars[start_idx:start_idx + chars_per_line])
+                    for _, row in group.iterrows():
+                        color = safe_get(row.get("COLOR")).strip().upper()
+                        desc = safe_get(row.get("SUBCATEGORY")).strip().upper()
                         
-                        pdf.set_x(current_x + COLOR_WIDTH + DESC_WIDTH + 1)
-                        pdf.cell(QTY_WIDTH - 2, 5, line_text, 0, align="C")
-                        if line_num < lines_needed - 1:  # Don't move down after last line
-                            pdf.ln(5)
-                    
-                    # Move to next row
-                    pdf.set_xy(current_x, current_y + cell_height)
+                        try:
+                            qty = float(row.get("Quantity", 0))
+                        except:
+                            qty = 0
+                        
+                        # Create a key from color and description for grouping
+                        group_key = f"{color}|{desc}"
+                        
+                        if group_key in color_desc_groups:
+                            color_desc_groups[group_key]['quantity'] += qty
+                        else:
+                            color_desc_groups[group_key] = {
+                                'color': color,
+                                'description': desc,
+                                'quantity': qty
+                            }
+                        
+                        total_qty += qty
 
-            # Enhanced total row with multi-line support (immediately after the loop, no extra line break)
-            pdf.set_font("Arial", "B", 8.5)
-            total_display = str(int(total_qty))
-            
-            # Calculate if total needs multiple lines
-            total_width = pdf.get_string_width(total_display)
-            total_cell_width = QTY_WIDTH * 0.95  # Use 95% of quantity cell width
-            
-            if total_width <= total_cell_width:
-                # Single line - normal height
-                cell_height = 5
-                pdf.cell(COLOR_WIDTH, cell_height, "", 1)
-                pdf.cell(DESC_WIDTH, cell_height, "TOTAL:", 1, align="C")
-                pdf.cell(QTY_WIDTH, cell_height, total_display, 1, align="C")
-                pdf.ln()
-            else:
-                # Multi-line total - calculate needed height
-                lines_needed = int(total_width / total_cell_width) + 1
-                cell_height = 5 * lines_needed
-                
-                # Store current position
-                current_x = pdf.get_x()
-                current_y = pdf.get_y()
-                
-                # Draw empty color cell and description cell with increased height
-                pdf.cell(COLOR_WIDTH, cell_height, "", 1)
-                pdf.cell(DESC_WIDTH, cell_height, "TOTAL:", 1, align="C")
-                
-                # Draw total cell border first
-                pdf.cell(QTY_WIDTH, cell_height, "", 1)
-                
-                # Now add multi-line total text
-                pdf.set_xy(current_x + COLOR_WIDTH + DESC_WIDTH + 1, current_y + 1)
-                
-                # Split total into chunks that fit
-                total_chars = list(total_display)
-                chars_per_line = int(len(total_chars) / lines_needed)
-                
-                for line_num in range(lines_needed):
-                    start_idx = line_num * chars_per_line
-                    if line_num == lines_needed - 1:  # Last line gets remaining chars
-                        line_text = ''.join(total_chars[start_idx:])
-                    else:
-                        line_text = ''.join(total_chars[start_idx:start_idx + chars_per_line])
-                    
-                    pdf.set_x(current_x + COLOR_WIDTH + DESC_WIDTH + 1)
-                    pdf.cell(QTY_WIDTH - 2, 5, line_text, 0, align="C")
-                    if line_num < lines_needed - 1:  # Don't move down after last line
-                        pdf.ln(5)
-                
-                # Move to next section
-                pdf.set_xy(current_x, current_y + cell_height)
-                pdf.ln()
-            
-            pdf.ln(7)
-
-            # Enhanced logo section with database lookup and multi-line support (using full usable width)
-            logo_info = get_logo_info(logo_sku_str)
-            
-            # Calculate proportional widths that add up to usable_width (your specified sizing)
-            logo_sku_label_width = usable_width * 0.10   # Logo SKU label - 10%
-            logo_sku_value_width = usable_width * 0.08   # Logo SKU value - 8%
-            logo_pos_label_width = usable_width * 0.15   # Logo Position label - 15%
-            logo_pos_value_width = usable_width * 0.44   # Logo Position value - 44%
-            stitch_label_width = usable_width * 0.13     # Stitch Count label - 13%
-            stitch_value_width = usable_width * 0.10     # Stitch Count value - 10%
-            
-            # Debug: verify total width doesn't exceed usable_width
-            total_logo_width = (logo_sku_label_width + logo_sku_value_width + 
-                              logo_pos_label_width + logo_pos_value_width + 
-                              stitch_label_width + stitch_value_width)
-            print(f"Logo section total width: {total_logo_width:.2f}mm, usable width: {usable_width:.2f}mm")
-            
-            # Ensure we don't exceed usable width (safety check)
-            if total_logo_width > usable_width:
-                scale_factor = usable_width / total_logo_width
-                logo_sku_label_width *= scale_factor
-                logo_sku_value_width *= scale_factor
-                logo_pos_label_width *= scale_factor
-                logo_pos_value_width *= scale_factor
-                stitch_label_width *= scale_factor
-                stitch_value_width *= scale_factor
-                print(f"Applied scaling factor: {scale_factor:.3f}")
-            
-            # Prepare values for multi-line processing
-            logo_display = logo_sku_str
-            logo_pos = ""
-            if logo_info and logo_info['logo_position']:
-                logo_pos = logo_info['logo_position']
-            elif "LOGO POSITION" in group.columns:
-                logo_pos = safe_get(group["LOGO POSITION"].iloc[0])
-            
-            stitch_count = ""
-            if logo_info and logo_info['stitch_count']:
-                stitch_count = str(logo_info['stitch_count'])
-            elif "STITCH COUNT" in group.columns:
-                stitch_count = safe_get(group["STITCH COUNT"].iloc[0])
-            
-            # Calculate available widths for each field (95% of cell width)
-            logo_sku_width = logo_sku_value_width * 0.95
-            logo_pos_width = logo_pos_value_width * 0.95
-            stitch_count_width = stitch_value_width * 0.95
-            
-            # Check which fields need multiple lines
-            pdf.set_font("Arial", "", 8.5)
-            logo_text_width = pdf.get_string_width(logo_display)
-            pos_text_width = pdf.get_string_width(logo_pos)
-            stitch_text_width = pdf.get_string_width(stitch_count)
-            
-            # Calculate lines needed for each field
-            logo_lines = max(1, int(logo_text_width / logo_sku_width) + 1) if logo_text_width > logo_sku_width else 1
-            pos_lines = max(1, int(pos_text_width / logo_pos_width) + 1) if pos_text_width > logo_pos_width else 1
-            stitch_lines = max(1, int(stitch_text_width / stitch_count_width) + 1) if stitch_text_width > stitch_count_width else 1
-            
-            # Use the maximum lines needed for consistent row height
-            max_lines = max(logo_lines, pos_lines, stitch_lines)
-            cell_height = 5 * max_lines
-            
-            # Store current position
-            current_x = pdf.get_x()
-            current_y = pdf.get_y()
-            
-            # Draw cell borders first (using proportional widths)
-            pdf.set_font("Arial", "B", 8.5)
-            pdf.cell(logo_sku_label_width, cell_height, "", border=1)  # Logo SKU label cell
-            pdf.set_font("Arial", "", 8.5)
-            pdf.cell(logo_sku_value_width, cell_height, "", border=1)  # Logo SKU value cell
-            pdf.set_font("Arial", "B", 8.5)
-            pdf.cell(logo_pos_label_width, cell_height, "", border=1)  # Logo Position label cell
-            pdf.set_font("Arial", "", 8.5)
-            pdf.cell(logo_pos_value_width, cell_height, "", border=1)  # Logo Position value cell
-            pdf.set_font("Arial", "B", 8.5)
-            pdf.cell(stitch_label_width, cell_height, "", border=1)  # Stitch Count label cell
-            pdf.set_font("Arial", "", 8.5)
-            pdf.cell(stitch_value_width, cell_height, "", border=1)  # Stitch Count value cell
-            
-            # Now add the labels (centered vertically)
-            label_y_offset = (cell_height - 5) / 2
-            
-            # Logo SKU label
-            pdf.set_xy(current_x, current_y + label_y_offset)
-            pdf.set_font("Arial", "B", 8.5)
-            pdf.cell(logo_sku_label_width, 5, "LOGO SKU:", align="C")
-            
-            # Logo Position label
-            pdf.set_xy(current_x + logo_sku_label_width + logo_sku_value_width, current_y + label_y_offset)
-            pdf.set_font("Arial", "B", 8.5)
-            pdf.cell(logo_pos_label_width, 5, "LOGO POSITION:", align="C")
-            
-            # Stitch Count label
-            pdf.set_xy(current_x + logo_sku_label_width + logo_sku_value_width + logo_pos_label_width + logo_pos_value_width, current_y + label_y_offset)
-            pdf.set_font("Arial", "B", 8.5)
-            pdf.cell(stitch_label_width, 5, "STITCH COUNT:", align="C")
-            
-            # Add multi-line values
-            pdf.set_font("Arial", "", 8.5)
-            
-            # Logo SKU value (multi-line if needed)
-            if logo_lines > 1:
-                logo_chars = list(logo_display)
-                chars_per_line = max(1, len(logo_chars) // logo_lines)
-                for line_num in range(logo_lines):
-                    start_idx = line_num * chars_per_line
-                    if line_num == logo_lines - 1:
-                        line_text = ''.join(logo_chars[start_idx:])
-                    else:
-                        line_text = ''.join(logo_chars[start_idx:start_idx + chars_per_line])
-                    
-                    line_y = current_y + (line_num * 5) + ((cell_height - (logo_lines * 5)) / 2)
-                    pdf.set_xy(current_x + logo_sku_label_width + 1, line_y)
-                    pdf.cell(logo_sku_value_width - 2, 5, line_text, align="C")
-            else:
-                pdf.set_xy(current_x + logo_sku_label_width + 1, current_y + label_y_offset)
-                pdf.cell(logo_sku_value_width - 2, 5, logo_display, align="C")
-            
-            # Logo Position value (multi-line if needed)
-            if pos_lines > 1:
-                pos_chars = list(logo_pos)
-                chars_per_line = max(1, len(pos_chars) // pos_lines)
-                for line_num in range(pos_lines):
-                    start_idx = line_num * chars_per_line
-                    if line_num == pos_lines - 1:
-                        line_text = ''.join(pos_chars[start_idx:])
-                    else:
-                        line_text = ''.join(pos_chars[start_idx:start_idx + chars_per_line])
-                    
-                    line_y = current_y + (line_num * 5) + ((cell_height - (pos_lines * 5)) / 2)
-                    pdf.set_xy(current_x + logo_sku_label_width + logo_sku_value_width + logo_pos_label_width + 1, line_y)
-                    pdf.cell(logo_pos_value_width - 2, 5, line_text, align="L")
-            else:
-                pdf.set_xy(current_x + logo_sku_label_width + logo_sku_value_width + logo_pos_label_width + 1, current_y + label_y_offset)
-                pdf.cell(logo_pos_value_width - 2, 5, logo_pos, align="L")
-            
-            # Stitch Count value (multi-line if needed)
-            if stitch_lines > 1:
-                stitch_chars = list(stitch_count)
-                chars_per_line = max(1, len(stitch_chars) // stitch_lines)
-                for line_num in range(stitch_lines):
-                    start_idx = line_num * chars_per_line
-                    if line_num == stitch_lines - 1:
-                        line_text = ''.join(stitch_chars[start_idx:])
-                    else:
-                        line_text = ''.join(stitch_chars[start_idx:start_idx + chars_per_line])
-                    
-                    line_y = current_y + (line_num * 5) + ((cell_height - (stitch_lines * 5)) / 2)
-                    pdf.set_xy(current_x + logo_sku_label_width + logo_sku_value_width + logo_pos_label_width + logo_pos_value_width + stitch_label_width + 1, line_y)
-                    pdf.cell(stitch_value_width - 2, 5, line_text, align="C")
-            else:
-                pdf.set_xy(current_x + logo_sku_label_width + logo_sku_value_width + logo_pos_label_width + logo_pos_value_width + stitch_label_width + 1, current_y + label_y_offset)
-                pdf.cell(stitch_value_width - 2, 5, stitch_count, align="C")
-            
-            # Move to next section
-            pdf.set_xy(current_x, current_y + cell_height)
-            
-            # Minimal consistent spacing after logo section
-            pdf.ln(2)
-
-            # Enhanced notes section with multi-line support
-            pdf.set_font("Arial", "B", 8.5)
-            
-            # Get notes value from database or original data
-            notes = ""
-            if logo_info and logo_info['notes']:
-                notes = logo_info['notes']
-            elif "NOTES" in group.columns:
-                notes = safe_get(group["NOTES"].iloc[0])
-            
-            # Calculate available width for notes (95% of notes value cell)
-            notes_value_width = (usable_width * 0.90) * 0.95  # 95% of the 90% notes value cell
-            
-            # Check if notes need multiple lines
-            pdf.set_font("Arial", "", 8.5)
-            notes_text_width = pdf.get_string_width(notes)
-            
-            if notes_text_width <= notes_value_width:
-                # Single line - normal height
-                cell_height = 5
-                pdf.set_font("Arial", "B", 8.5)
-                pdf.cell(usable_width * 0.10, cell_height, "NOTES:", border=1, align="C")
-                pdf.set_font("Arial", "", 8.5)
-                pdf.cell(usable_width * 0.90, cell_height, notes, border=1)
-            else:
-                # Multi-line notes - calculate needed height using word-based wrapping
-                # Split text into words for better line breaks
-                words = notes.split()
-                lines = []
-                current_line = ""
-                
-                # Build lines by adding words until width limit is reached
-                for word in words:
-                    test_line = current_line + (" " if current_line else "") + word
-                    test_width = pdf.get_string_width(test_line)
-                    
-                    if test_width <= notes_value_width:
-                        current_line = test_line
-                    else:
-                        if current_line:  # If current line has content, save it
-                            lines.append(current_line)
-                            current_line = word
-                        else:  # Single word is too long, need to break it
-                            # For very long single words, break by characters
-                            while word:
-                                char_line = ""
-                                for char in word:
-                                    if pdf.get_string_width(char_line + char) <= notes_value_width:
-                                        char_line += char
-                                    else:
-                                        break
-                                if char_line:
-                                    lines.append(char_line)
-                                    word = word[len(char_line):]
+                    # Display grouped results with enhanced formatting
+                    pdf.set_font("Arial", "", 8.5)
+                    for group_key, group_data in color_desc_groups.items():
+                        color_display = truncate_text(group_data['color'], pdf, COLOR_WIDTH * 0.90)
+                        desc_display = truncate_text(group_data['description'], pdf, DESC_WIDTH * 0.90)
+                        qty_display = str(int(group_data['quantity']))
+                        
+                        # Calculate if quantity needs multiple lines
+                        qty_width = pdf.get_string_width(qty_display)
+                        qty_cell_width = QTY_WIDTH * 0.95  # Use 95% of quantity cell width
+                        
+                        if qty_width <= qty_cell_width:
+                            # Single line - normal height
+                            cell_height = 5
+                            pdf.cell(COLOR_WIDTH, cell_height, color_display, 1, align="C")
+                            pdf.cell(DESC_WIDTH, cell_height, desc_display, 1, align="C")
+                            pdf.cell(QTY_WIDTH, cell_height, qty_display, 1, align="C")
+                            pdf.ln()
+                        else:
+                            # Multi-line quantity - calculate needed height
+                            lines_needed = int(qty_width / qty_cell_width) + 1
+                            cell_height = 5 * lines_needed
+                            
+                            # Store current position
+                            current_x = pdf.get_x()
+                            current_y = pdf.get_y()
+                            
+                            # Draw color and description cells with increased height
+                            pdf.cell(COLOR_WIDTH, cell_height, color_display, 1, align="C")
+                            pdf.cell(DESC_WIDTH, cell_height, desc_display, 1, align="C")
+                            
+                            # Draw quantity cell border first
+                            pdf.cell(QTY_WIDTH, cell_height, "", 1)
+                            
+                            # Now add multi-line quantity text
+                            pdf.set_xy(current_x + COLOR_WIDTH + DESC_WIDTH + 1, current_y + 1)
+                            
+                            # Split quantity into chunks that fit
+                            qty_chars = list(qty_display)
+                            chars_per_line = int(len(qty_chars) / lines_needed)
+                            
+                            for line_num in range(lines_needed):
+                                start_idx = line_num * chars_per_line
+                                if line_num == lines_needed - 1:  # Last line gets remaining chars
+                                    line_text = ''.join(qty_chars[start_idx:])
                                 else:
-                                    # Single character is too wide (shouldn't happen)
-                                    lines.append(word[0])
-                                    word = word[1:]
-                            current_line = ""
-                
-                # Add the last line if it has content
-                if current_line:
-                    lines.append(current_line)
-                
-                lines_needed = len(lines)
-                cell_height = 5 * lines_needed
-                
-                print(f"Notes text: '{notes}'")
-                print(f"Split into {lines_needed} lines:")
-                for i, line in enumerate(lines):
-                    print(f"  Line {i+1}: '{line}'")
-                
-                # Store current position
-                current_x = pdf.get_x()
-                current_y = pdf.get_y()
-                
-                # Draw cell borders first
-                pdf.set_font("Arial", "B", 8.5)
-                pdf.cell(usable_width * 0.10, cell_height, "", border=1)  # Notes label cell
-                pdf.set_font("Arial", "", 8.5)
-                pdf.cell(usable_width * 0.90, cell_height, "", border=1)  # Notes value cell
-                
-                # Add NOTES label (centered vertically)
-                label_y_offset = (cell_height - 5) / 2
-                pdf.set_xy(current_x, current_y + label_y_offset)
-                pdf.set_font("Arial", "B", 8.5)
-                pdf.cell(usable_width * 0.10, 5, "NOTES:", align="C")
-                
-                # Add multi-line notes value using the word-wrapped lines
-                pdf.set_font("Arial", "", 8.5)
-                for line_num, line_text in enumerate(lines):
-                    # Calculate Y position for this line (centered within the multi-line area)
-                    line_y = current_y + (line_num * 5) + ((cell_height - (lines_needed * 5)) / 2)
-                    pdf.set_xy(current_x + (usable_width * 0.10) + 1, line_y)
-                    pdf.cell((usable_width * 0.90) - 2, 5, line_text, align="L")
-                
-                # Move to next section
-                pdf.set_xy(current_x, current_y + cell_height)
-                
-                # Minimal consistent spacing after notes section
-                pdf.ln(2)
+                                    line_text = ''.join(qty_chars[start_idx:start_idx + chars_per_line])
+                                
+                                pdf.set_x(current_x + COLOR_WIDTH + DESC_WIDTH + 1)
+                                pdf.cell(QTY_WIDTH - 2, 5, line_text, 0, align="C")
+                                if line_num < lines_needed - 1:  # Don't move down after last line
+                                    pdf.ln(5)
+                            
+                            # Move to next row
+                            pdf.set_xy(current_x, current_y + cell_height)
 
-            # Enhanced logo color table with actual colors
-            logo_colors = logo_info['logo_colors'] if logo_info else None
-            add_logo_color_table(pdf, logo_colors)
+                    # Enhanced total row with multi-line support
+                    pdf.set_font("Arial", "B", 8.5)
+                    total_display = str(int(total_qty))
+                    
+                    # Calculate if total needs multiple lines
+                    total_width = pdf.get_string_width(total_display)
+                    total_cell_width = QTY_WIDTH * 0.95  # Use 95% of quantity cell width
+                    
+                    if total_width <= total_cell_width:
+                        # Single line - normal height
+                        cell_height = 5
+                        pdf.cell(COLOR_WIDTH, cell_height, "", 1)
+                        pdf.cell(DESC_WIDTH, cell_height, "TOTAL:", 1, align="C")
+                        pdf.cell(QTY_WIDTH, cell_height, total_display, 1, align="C")
+                        pdf.ln()
+                    else:
+                        # Multi-line total - calculate needed height
+                        lines_needed = int(total_width / total_cell_width) + 1
+                        cell_height = 5 * lines_needed
+                        
+                        # Store current position
+                        current_x = pdf.get_x()
+                        current_y = pdf.get_y()
+                        
+                        # Draw empty color cell and description cell with increased height
+                        pdf.cell(COLOR_WIDTH, cell_height, "", 1)
+                        pdf.cell(DESC_WIDTH, cell_height, "TOTAL:", 1, align="C")
+                        
+                        # Draw total cell border first
+                        pdf.cell(QTY_WIDTH, cell_height, "", 1)
+                        
+                        # Now add multi-line total text
+                        pdf.set_xy(current_x + COLOR_WIDTH + DESC_WIDTH + 1, current_y + 1)
+                        
+                        # Split total into chunks that fit
+                        total_chars = list(total_display)
+                        chars_per_line = int(len(total_chars) / lines_needed)
+                        
+                        for line_num in range(lines_needed):
+                            start_idx = line_num * chars_per_line
+                            if line_num == lines_needed - 1:  # Last line gets remaining chars
+                                line_text = ''.join(total_chars[start_idx:])
+                            else:
+                                line_text = ''.join(total_chars[start_idx:start_idx + chars_per_line])
+                            
+                            pdf.set_x(current_x + COLOR_WIDTH + DESC_WIDTH + 1)
+                            pdf.cell(QTY_WIDTH - 2, 5, line_text, 0, align="C")
+                            if line_num < lines_needed - 1:  # Don't move down after last line
+                                pdf.ln(5)
+                        
+                        # Move to next section
+                        pdf.set_xy(current_x, current_y + cell_height)
+                        pdf.ln()
+                    
+                    pdf.ln(7)
 
-            # Minimal consistent spacing after logo color table
-            pdf.ln(2)
-            pdf.set_font("Arial", "B", 8.5)
-            pdf.cell(25, 5, "FILE NAME:", border=1, align="C")
-            pdf.set_font("Arial", "", 8.5)
-            # Use file name from database if available, otherwise from original data
-            file_name = ""
-            if logo_info and logo_info['file_name']:
-                file_name = logo_info['file_name']
-            elif "FILE NAME" in group.columns:
-                file_name = safe_get(group["FILE NAME"].iloc[0])
-            
-            # Truncate file name to use 95% of available space
-            file_name_display = truncate_text(file_name, pdf, (usable_width - 25) * 0.95)
-            pdf.cell(usable_width - 25, 5, file_name_display, border=1)
-            
-            # Minimal consistent spacing after file name table
-            pdf.ln(2)
+                    # Enhanced logo section with database lookup and multi-line support
+                    logo_info = get_logo_info(str(logo_sku).strip())
+                    
+                    # (Rest of your PDF generation code...)
+                    # I'll continue with the logo section and other parts...
+                    
+                    # Calculate proportional widths that add up to usable_width
+                    logo_sku_label_width = usable_width * 0.10   
+                    logo_sku_value_width = usable_width * 0.08   
+                    logo_pos_label_width = usable_width * 0.15   
+                    logo_pos_value_width = usable_width * 0.44   
+                    stitch_label_width = usable_width * 0.13     
+                    stitch_value_width = usable_width * 0.10     
+                    
+                    # Prepare values for multi-line processing
+                    logo_display = str(logo_sku).strip()
+                    logo_pos = ""
+                    if logo_info and logo_info['logo_position']:
+                        logo_pos = logo_info['logo_position']
+                    elif "LOGO POSITION" in group.columns:
+                        logo_pos = safe_get(group["LOGO POSITION"].iloc[0])
+                    
+                    stitch_count = ""
+                    if logo_info and logo_info['stitch_count']:
+                        stitch_count = str(logo_info['stitch_count'])
+                    elif "STITCH COUNT" in group.columns:
+                        stitch_count = safe_get(group["STITCH COUNT"].iloc[0])
+                    
+                    # Enhanced logo section (simplified for space)
+                    pdf.set_font("Arial", "B", 8.5)
+                    pdf.cell(logo_sku_label_width, 5, "LOGO SKU:", border=1, align="C")
+                    pdf.set_font("Arial", "", 8.5)
+                    pdf.cell(logo_sku_value_width, 5, logo_display, border=1, align="C")
+                    pdf.set_font("Arial", "B", 8.5)
+                    pdf.cell(logo_pos_label_width, 5, "LOGO POSITION:", border=1, align="C")
+                    pdf.set_font("Arial", "", 8.5)
+                    pdf.cell(logo_pos_value_width, 5, logo_pos, border=1)
+                    pdf.set_font("Arial", "B", 8.5)
+                    pdf.cell(stitch_label_width, 5, "STITCH COUNT:", border=1, align="C")
+                    pdf.set_font("Arial", "", 8.5)
+                    pdf.cell(stitch_value_width, 5, stitch_count, border=1, align="C")
+                    pdf.ln(7)
 
-            # Add logo images based on preserved SKU number and pass logo_info
-            pdf.ln(5)  # Add some space before images
-            add_logo_images_to_pdf(pdf, logo_sku_str, logo_info)
+                    # Enhanced notes section
+                    notes = ""
+                    if logo_info and logo_info['notes']:
+                        notes = logo_info['notes']
+                    elif "NOTES" in group.columns:
+                        notes = safe_get(group["NOTES"].iloc[0])
+                    
+                    pdf.set_font("Arial", "B", 8.5)
+                    pdf.cell(usable_width * 0.10, 5, "NOTES:", border=1, align="C")
+                    pdf.set_font("Arial", "", 8.5)
+                    pdf.cell(usable_width * 0.90, 5, notes, border=1)
+                    pdf.ln(7)
 
-            # Generate filename: SO_SO#_AI_LOGO SKU.pdf
-            safe_doc_num = str(doc_num).replace("/", "_").replace("\\", "_")
-            safe_logo_sku = logo_sku_str.replace("/", "_").replace("\\", "_")
-            filename = f"SO_{safe_doc_num}_AI_{safe_logo_sku}.pdf"
-            
-            pdf.output(os.path.join(OUTPUT_FOLDER, filename))
-            print(f"Generated PDF: {filename}")
-            pdf_count += 1
+                    # Enhanced logo color table with actual colors
+                    logo_colors = logo_info['logo_colors'] if logo_info else None
+                    add_logo_color_table(pdf, logo_colors)
+
+                    pdf.ln(2)
+                    pdf.set_font("Arial", "B", 8.5)
+                    pdf.cell(25, 5, "FILE NAME:", border=1, align="C")
+                    pdf.set_font("Arial", "", 8.5)
+                    
+                    file_name = ""
+                    if logo_info and logo_info['file_name']:
+                        file_name = logo_info['file_name']
+                    elif "FILE NAME" in group.columns:
+                        file_name = safe_get(group["FILE NAME"].iloc[0])
+                    
+                    file_name_display = truncate_text(file_name, pdf, (usable_width - 25) * 0.95)
+                    pdf.cell(usable_width - 25, 5, file_name_display, border=1)
+                    pdf.ln(7)
+
+                    # Add logo images
+                    add_logo_images_to_pdf(pdf, str(logo_sku).strip(), logo_info)
+
+                    # Generate filename
+                    safe_doc_num = str(doc_num).replace("/", "_").replace("\\", "_")
+                    safe_logo_sku = str(logo_sku).strip().replace("/", "_").replace("\\", "_")
+                    filename = f"SO_{safe_doc_num}_AI_{safe_logo_sku}.pdf"
+                    
+                    pdf.output(os.path.join(OUTPUT_FOLDER, filename))
+                    print(f"Generated PDF: {filename}")
+                    pdf_count += 1
+                    
+                except Exception as e:
+                    print(f"Error generating PDF for {doc_num}-{logo_sku}: {e}")
+                    # Update report data for this group to show error
+                    for idx, row_data in enumerate(report_data):
+                        if (row_data['Document Number'] == str(doc_num) and 
+                            row_data['LOGO'] == str(logo_sku)):
+                            report_data[idx]['Execution Status'] = 'FAILED'
+                            report_data[idx]['Error Message'] = f'PDF generation error: {str(e)}'
+
+        # Generate comprehensive reports
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        
+        try:
+            report_gen.generate_all_reports(
+                report_data=report_data,
+                output_folder=OUTPUT_FOLDER,
+                timestamp=timestamp,
+                sales_order_filter=sales_order_filter
+            )
+            print("Reports generated successfully")
+        except Exception as e:
+            print(f"Error generating reports: {e}")
 
         # Check if any PDFs were generated
         if pdf_count == 0:
@@ -1434,15 +1236,15 @@ def upload_file():
             
             return render_template("upload.html", error_message=error_msg)
 
-        # Create ZIP file
+        # Create ZIP file including reports
         zip_path = os.path.join(OUTPUT_FOLDER, ZIP_NAME)
         with zipfile.ZipFile(zip_path, "w") as zipf:
             for fname in os.listdir(OUTPUT_FOLDER):
-                if fname.endswith(".pdf"):
+                if fname.endswith((".pdf", ".xlsx", ".txt", ".json")) and fname != ZIP_NAME:
                     zipf.write(os.path.join(OUTPUT_FOLDER, fname), fname)
 
         # Success message
-        success_msg = f"Successfully generated {pdf_count} art instruction PDF(s)"
+        success_msg = f"Successfully generated {pdf_count} art instruction PDF(s) with execution report"
         if sales_order_filter:
             success_msg += f" for Sales Order '{sales_order_filter}'"
         
