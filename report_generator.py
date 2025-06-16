@@ -16,8 +16,8 @@ class ReportGenerator:
     def preprocess_report_data(self, report_data):
         """
         Preprocess report data to handle special cases:
-        - Convert execution status to N/A for Invalid Logo SKU errors
-        - Convert execution status to Not Approved for "Status: Not Approved" errors
+        - Convert execution status to NO LOGO for Invalid Logo SKU errors
+        - Convert execution status to NOT APPROVED for "Status: Not Approved" errors
         """
         processed_data = []
         for record in report_data:
@@ -26,10 +26,10 @@ class ReportGenerator:
             
             # Check if error message contains "Invalid Logo SKU:"
             if 'Invalid Logo SKU:' in error_msg and error_msg.strip().endswith('""'):
-                processed_record['Execution Status'] = 'N/A'
+                processed_record['Execution Status'] = 'NO LOGO'
             # Check if error message is "Status: Not Approved"
             elif error_msg.strip() == "Status: Not Approved":
-                processed_record['Execution Status'] = 'Not Approved'
+                processed_record['Execution Status'] = 'NOT APPROVED'
             
             processed_data.append(processed_record)
         
@@ -168,8 +168,8 @@ class ReportGenerator:
                 # Status column formatting
                 success_fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
                 failed_fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
-                na_fill = PatternFill(start_color="D3D3D3", end_color="D3D3D3", fill_type="solid")  # Grey for N/A
-                not_approved_fill = PatternFill(start_color="FFE4B5", end_color="FFE4B5", fill_type="solid")  # Light orange for Not Approved
+                no_logo_fill = PatternFill(start_color="D3D3D3", end_color="D3D3D3", fill_type="solid")  # Grey for NO LOGO
+                not_approved_fill = PatternFill(start_color="FFE4B5", end_color="FFE4B5", fill_type="solid")  # Light orange for NOT APPROVED
                 
                 execution_status_col = None
                 for idx, cell in enumerate(worksheet[1]):
@@ -184,9 +184,9 @@ class ReportGenerator:
                             status_cell.fill = success_fill
                         elif status_cell.value == 'FAILED':
                             status_cell.fill = failed_fill
-                        elif status_cell.value == 'N/A':
-                            status_cell.fill = na_fill
-                        elif status_cell.value == 'Not Approved':
+                        elif status_cell.value == 'NO LOGO':
+                            status_cell.fill = no_logo_fill
+                        elif status_cell.value == 'NOT APPROVED':
                             status_cell.fill = not_approved_fill
                 
                 # Auto-adjust column widths
@@ -249,6 +249,8 @@ class ReportGenerator:
                 partial_success_fill = PatternFill(start_color="000080", end_color="000080", fill_type="solid")  # Dark Blue
                 partial_success_font = Font(color="FFFFFF")  # White text for dark blue background
                 total_failed_fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")  # Red
+                not_approved_fill = PatternFill(start_color="FFA500", end_color="FFA500", fill_type="solid")  # Orange for NOT APPROVED
+                not_approved_font = Font(color="FFFFFF")  # White text for orange background
                 
                 # Find completion status column
                 completion_status_col = None
@@ -267,6 +269,9 @@ class ReportGenerator:
                             status_cell.font = partial_success_font
                         elif status_cell.value == 'TOTAL FAILED':
                             status_cell.fill = total_failed_fill
+                        elif status_cell.value == 'NOT APPROVED':
+                            status_cell.fill = not_approved_fill
+                            status_cell.font = not_approved_font
                 
                 # Auto-adjust column widths
                 for column in worksheet.columns:
@@ -301,16 +306,21 @@ class ReportGenerator:
             # Calculate counts for this sales order
             so_total = len(items)
             so_success = sum(1 for item in items if item.get('Execution Status') == 'SUCCESS')
-            so_na = sum(1 for item in items if item.get('Execution Status') == 'N/A')
+            so_no_logo = sum(1 for item in items if item.get('Execution Status') == 'NO LOGO')
+            so_failed = sum(1 for item in items if item.get('Execution Status') == 'FAILED')
+            so_not_approved = sum(1 for item in items if item.get('Execution Status') == 'NOT APPROVED')
             
-            # Calculate success rate (include N/A as success)
-            so_success_rate = ((so_success + so_na) / so_total * 100) if so_total > 0 else 0
+            # Calculate success rate (include only NO LOGO as success, NOT APPROVED is considered failure)
+            so_success_rate = ((so_success + so_no_logo) / so_total * 100) if so_total > 0 else 0
             
-            # Determine completion status based on success rate
-            # FULLY SUCCESS: All items are either SUCCESS or N/A (100% success rate)
-            # TOTAL FAILED: No items are SUCCESS or N/A (0% success rate) 
+            # Determine completion status with special handling for NOT APPROVED
+            # NOT APPROVED: If ALL items are NOT APPROVED (no SUCCESS, FAILED, or NO LOGO items)
+            # FULLY SUCCESS: All items are either SUCCESS or NO LOGO (100% success rate)
+            # TOTAL FAILED: No items are SUCCESS or NO LOGO (0% success rate) 
             # PARTIAL SUCCESS: Mix of success/failure (1-99% success rate)
-            if so_success_rate == 100:
+            if so_not_approved == so_total:  # All items are NOT APPROVED
+                completion_status = "NOT APPROVED"
+            elif so_success_rate == 100:
                 completion_status = "FULLY SUCCESS"
             elif so_success_rate == 0:
                 completion_status = "TOTAL FAILED"
@@ -365,14 +375,14 @@ class ReportGenerator:
             
             pdf.ln(10)
             
-            # Summary statistics (updated to include N/A and Not Approved counts)
+            # Summary statistics (updated to include NO LOGO and NOT APPROVED counts)
             total_records = len(report_data)
             success_count = sum(1 for record in report_data if record.get('Execution Status') == 'SUCCESS')
             failed_count = sum(1 for record in report_data if record.get('Execution Status') == 'FAILED')
-            na_count = sum(1 for record in report_data if record.get('Execution Status') == 'N/A')
-            not_approved_count = sum(1 for record in report_data if record.get('Execution Status') == 'Not Approved')
-            # Include N/A as success for success rate calculation
-            success_rate = ((success_count + na_count) / total_records * 100) if total_records > 0 else 0
+            no_logo_count = sum(1 for record in report_data if record.get('Execution Status') == 'NO LOGO')
+            not_approved_count = sum(1 for record in report_data if record.get('Execution Status') == 'NOT APPROVED')
+            # Include only NO LOGO as success for success rate calculation (NOT APPROVED is considered failure)
+            success_rate = ((success_count + no_logo_count) / total_records * 100) if total_records > 0 else 0
             
             pdf.set_font('Arial', 'B', 14)
             pdf.cell(0, 8, 'Summary Statistics', ln=True)
@@ -382,9 +392,9 @@ class ReportGenerator:
             pdf.cell(0, 6, f'Total Records Processed: {total_records}', ln=True)
             pdf.cell(0, 6, f'Successful: {success_count}', ln=True)
             pdf.cell(0, 6, f'Failed: {failed_count}', ln=True)
-            pdf.cell(0, 6, f'N/A (Invalid Logo SKU): {na_count}', ln=True)
-            pdf.cell(0, 6, f'Not Approved: {not_approved_count}', ln=True)
-            pdf.cell(0, 6, f'Success Rate: {success_rate:.1f}% (includes N/A as success)', ln=True)
+            pdf.cell(0, 6, f'NO LOGO (Invalid Logo SKU): {no_logo_count}', ln=True)
+            pdf.cell(0, 6, f'NOT APPROVED: {not_approved_count}', ln=True)
+            pdf.cell(0, 6, f'Success Rate: {success_rate:.1f}% (includes NO LOGO as success, NOT APPROVED as failure)', ln=True)
             pdf.cell(0, 6, f'Total Sales Orders: {len(sales_orders)}', ln=True)
             
             pdf.ln(10)
@@ -404,17 +414,24 @@ class ReportGenerator:
                 pdf.cell(0, 8, f'Sales Order: {so_number}', ln=True)
                 pdf.ln(2)
                 
-                # SO summary (updated to include N/A, Not Approved counts and success rate)
+                # SO summary (updated to include NO LOGO, NOT APPROVED counts and success rate)
                 so_total = len(items)
                 so_success = sum(1 for item in items if item.get('Execution Status') == 'SUCCESS')
                 so_failed = sum(1 for item in items if item.get('Execution Status') == 'FAILED')
-                so_na = sum(1 for item in items if item.get('Execution Status') == 'N/A')
-                so_not_approved = sum(1 for item in items if item.get('Execution Status') == 'Not Approved')
-                # Include N/A as success for success rate calculation
-                so_success_rate = ((so_success + so_na) / so_total * 100) if so_total > 0 else 0
+                so_no_logo = sum(1 for item in items if item.get('Execution Status') == 'NO LOGO')
+                so_not_approved = sum(1 for item in items if item.get('Execution Status') == 'NOT APPROVED')
+                # Include only NO LOGO as success for success rate calculation (NOT APPROVED is considered failure)
+                so_success_rate = ((so_success + so_no_logo) / so_total * 100) if so_total > 0 else 0
                 
-                # Determine completion status and color
-                if so_success_rate == 100:
+                # Determine completion status with special handling for NOT APPROVED
+                # NOT APPROVED: If ALL items are NOT APPROVED (no SUCCESS, FAILED, or NO LOGO items)
+                # FULLY SUCCESS: All items are either SUCCESS or NO LOGO (100% success rate)
+                # TOTAL FAILED: No items are SUCCESS or NO LOGO (0% success rate) 
+                # PARTIAL SUCCESS: Mix of success/failure (1-99% success rate)
+                if so_not_approved == so_total:  # All items are NOT APPROVED
+                    completion_status = "NOT APPROVED"
+                    status_color = (255, 165, 0)  # Orange
+                elif so_success_rate == 100:
                     completion_status = "FULLY SUCCESS"
                     status_color = (0, 128, 0)  # Green
                 elif so_success_rate == 0:
@@ -425,8 +442,8 @@ class ReportGenerator:
                     status_color = (0, 0, 139)  # Dark Blue
                 
                 pdf.set_font('Arial', '', 10)
-                pdf.cell(0, 5, f'Items: {so_total} | Success: {so_success} | Failed: {so_failed} | N/A: {so_na} | Not Approved: {so_not_approved}', ln=True)
-                pdf.cell(0, 5, f'Success Rate: {so_success_rate:.1f}% (includes N/A as success)', ln=True)
+                pdf.cell(0, 5, f'Items: {so_total} | Success: {so_success} | Failed: {so_failed} | NO LOGO: {so_no_logo} | NOT APPROVED: {so_not_approved}', ln=True)
+                pdf.cell(0, 5, f'Success Rate: {so_success_rate:.1f}% (includes NO LOGO as success, NOT APPROVED as failure)', ln=True)
                 
                 # Add completion status with color
                 pdf.set_text_color(status_color[0], status_color[1], status_color[2])
@@ -492,15 +509,15 @@ class ReportGenerator:
     def get_error_statistics(self, report_data):
         """
         Get detailed error statistics for debugging purposes
-        Updated to handle N/A and Not Approved status separately
+        Updated to handle NO LOGO and Not Approved status separately
         """
         error_stats = {
             "total_errors": 0,
-            "total_na": 0,
+            "total_no_logo": 0,
             "total_not_approved": 0,
             "error_types": defaultdict(int),
             "errors_by_sales_order": defaultdict(list),
-            "na_by_sales_order": defaultdict(list),
+            "no_logo_by_sales_order": defaultdict(list),
             "not_approved_by_sales_order": defaultdict(list),
             "most_common_errors": []
         }
@@ -519,9 +536,9 @@ class ReportGenerator:
                     "error": error_msg,
                     "style": record.get('VENDOR STYLE', 'N/A')
                 })
-            elif status == 'N/A':
-                error_stats["total_na"] += 1
-                error_stats["na_by_sales_order"][so_number].append({
+            elif status == 'NO LOGO':
+                error_stats["total_no_logo"] += 1
+                error_stats["no_logo_by_sales_order"][so_number].append({
                     "logo": record.get('LOGO', 'N/A'),
                     "error": record.get('Error Message', 'Invalid Logo SKU'),
                     "style": record.get('VENDOR STYLE', 'N/A')
