@@ -517,38 +517,16 @@ def optimize_image_layout(image_info, available_width, available_height, margin=
     return layout
 
 def add_logo_images_to_pdf(pdf, logo_sku, logo_info=None):
-    """Add logo images to PDF with intelligent sizing and layout, or display message if logo info not found"""
+    """Add logo images to PDF with intelligent sizing and layout"""
     if not logo_sku or pd.isna(logo_sku) or logo_sku == "":
-        return
-    
-    # Check if logo info was found in database
-    if logo_info is None:
-        print(f"Logo info not found in database for SKU: {logo_sku}")
-        
-        # Add "logo info not found" message to PDF
-        current_y = pdf.get_y() + 5
-        pdf.set_xy(pdf.l_margin, current_y)
-        pdf.set_font("Arial", "B", 12)
-        pdf.set_text_color(255, 0, 0)  # Red text
-        pdf.cell(0, 10, f"Logo info not found in database for SKU: {logo_sku}", align="C")
-        pdf.ln(15)
-        pdf.set_text_color(0, 0, 0)  # Reset to black text
         return
     
     # Find all images for this SKU
     logo_images = find_logo_images_by_sku(logo_sku)
     
+    # Note: Due to pre-validation, this should not happen, but keeping minimal check
     if not logo_images:
-        print(f"No logo images found for SKU: {logo_sku}")
-        
-        # Add "no images found" message to PDF
-        current_y = pdf.get_y() + 5
-        pdf.set_xy(pdf.l_margin, current_y)
-        pdf.set_font("Arial", "I", 10)
-        pdf.set_text_color(128, 128, 128)  # Gray text
-        pdf.cell(0, 8, f"No logo images found for SKU: {logo_sku}", align="C")
-        pdf.ln(12)
-        pdf.set_text_color(0, 0, 0)  # Reset to black text
+        print(f"Warning: No logo images found for SKU: {logo_sku} during PDF generation")
         return
     
     print(f"Found {len(logo_images)} logo image(s) for SKU {logo_sku}: {[img['filename'] for img in logo_images]}")
@@ -646,7 +624,7 @@ def add_logo_images_to_pdf(pdf, logo_sku, logo_info=None):
         pdf.cell(0, 8, f"Error loading logo images for SKU: {logo_sku}", align="C")
         pdf.ln(12)
         pdf.set_text_color(0, 0, 0)  # Reset to black text
-
+        
 def filter_by_sales_order(df, sales_order_filter):
     """Filter dataframe by sales order number if provided (exact match only)"""
     if not sales_order_filter or sales_order_filter.strip() == "":
@@ -717,7 +695,23 @@ def validate_row_for_processing(row, report_data):
         report_data.append(row_data)
         return False, f'Invalid Logo SKU: "{logo_sku_str}"'
     
-    # Validation 3: Check Operational Code validity
+    # Validation 3: Check if logo info exists in database
+    logo_info = get_logo_info(logo_sku_str)
+    if logo_info is None:
+        row_data['Execution Status'] = 'FAILED'
+        row_data['Error Message'] = f'Logo info not found in database for SKU: {logo_sku_str}'
+        report_data.append(row_data)
+        return False, f'Logo info not found in database for SKU: {logo_sku_str}'
+    
+    # Validation 4: Check if logo images exist
+    logo_images = find_logo_images_by_sku(logo_sku_str)
+    if not logo_images:
+        row_data['Execution Status'] = 'FAILED'
+        row_data['Error Message'] = f'Logo images not found for SKU: {logo_sku_str}'
+        report_data.append(row_data)
+        return False, f'Logo images not found for SKU: {logo_sku_str}'
+    
+    # Validation 5: Check Operational Code validity
     operational_code = None
     op_code_raw = row.get("OPERATIONAL CODE")
     
@@ -746,7 +740,7 @@ def validate_row_for_processing(row, report_data):
         report_data.append(row_data)
         return False, "Missing or empty Operational Code"
     
-    # Validation 4: Check Operational Code conditions
+    # Validation 6: Check Operational Code conditions
     if operational_code == 11:
         # Valid - Operational Code is 11
         row_data['Execution Status'] = 'SUCCESS'
@@ -1120,6 +1114,20 @@ def upload_file():
                     # Enhanced logo section with database lookup and multi-line support
                     logo_info = get_logo_info(str(logo_sku).strip())
                     
+                    # Check if logo image exists
+                    logo_images = find_logo_images_by_sku(logo_sku)
+                    if not logo_images:
+                        print(f"Error: Logo image not found for SKU {logo_sku}. Skipping PDF generation.")
+    
+                        # Update report status
+                        for idx, row_data in enumerate(report_data):
+                            if row_data['Document Number'] == str(doc_num) and row_data['LOGO'] == str(logo_sku):
+                                report_data[idx]['Execution Status'] = 'FAILED'
+                                report_data[idx]['Error Message'] = f'Logo image not found for SKU: {logo_sku}'
+    
+                        continue  # Skip this group
+
+
                     # (Rest of your PDF generation code...)
                     # I'll continue with the logo section and other parts...
                     
