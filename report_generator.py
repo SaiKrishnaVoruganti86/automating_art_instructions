@@ -1,7 +1,7 @@
 import pandas as pd
 from fpdf import FPDF
 from datetime import datetime
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
 import os
 
 class ReportGenerator:
@@ -38,11 +38,14 @@ class ReportGenerator:
     def create_overview_data(self, report_data):
         """
         Create overview data grouped by document number with completion status
+        Preserves the original order from the uploaded file
         """
-        # Group data by document number
-        sales_orders = defaultdict(list)
+        # Use OrderedDict to preserve the order of first appearance
+        sales_orders = OrderedDict()
         for record in report_data:
             so_number = record.get('Document Number', 'Unknown')
+            if so_number not in sales_orders:
+                sales_orders[so_number] = []
             sales_orders[so_number].append(record)
         
         overview_data = []
@@ -85,9 +88,7 @@ class ReportGenerator:
                 'Completion Status': completion_status
             })
         
-        # Sort by document number
-        overview_data.sort(key=lambda x: x['Document Number'])
-        
+        # NO SORTING - preserve original order from OrderedDict
         return overview_data
     
     def generate_all_reports(self, report_data, output_folder, timestamp, sales_order_filter=None):
@@ -115,13 +116,14 @@ class ReportGenerator:
     def generate_detailed_excel_report(self, report_data, output_folder, timestamp, sales_order_filter=None):
         """
         Generate detailed Excel report with all data including execution status columns
+        Preserves the original order from the uploaded file
         """
         if not report_data:
             print("No data to generate detailed Excel report")
             return
             
         try:
-            # Convert report data to DataFrame
+            # Convert report data to DataFrame - this preserves the original order
             df = pd.DataFrame(report_data)
             
             # Ensure all required columns exist
@@ -140,6 +142,8 @@ class ReportGenerator:
             input_columns = [col for col in required_columns if col not in ['Execution Status', 'Error Message']]
             final_columns = input_columns + ['Execution Status', 'Error Message']
             df = df[final_columns]
+            
+            # NO SORTING - keep original order from uploaded file
             
             # Generate filename
             filter_suffix = f"_SO_{sales_order_filter}" if sales_order_filter else ""
@@ -210,13 +214,14 @@ class ReportGenerator:
     def generate_overview_excel_report(self, report_data, output_folder, timestamp, sales_order_filter=None):
         """
         Generate overview Excel report with only Document Number and Completion Status
+        Preserves the original order from the uploaded file
         """
         if not report_data:
             print("No data to generate overview Excel report")
             return
             
         try:
-            # Create overview data grouped by document number
+            # Create overview data grouped by document number (preserves original order)
             overview_data = self.create_simple_overview_data(report_data)
             overview_df = pd.DataFrame(overview_data)
             
@@ -294,11 +299,14 @@ class ReportGenerator:
     def create_simple_overview_data(self, report_data):
         """
         Create simple overview data with only Document Number and Completion Status
+        Preserves the original order from the uploaded file
         """
-        # Group data by document number
-        sales_orders = defaultdict(list)
+        # Use OrderedDict to preserve the order of first appearance
+        sales_orders = OrderedDict()
         for record in report_data:
             so_number = record.get('Document Number', 'Unknown')
+            if so_number not in sales_orders:
+                sales_orders[so_number] = []
             sales_orders[so_number].append(record)
         
         overview_data = []
@@ -332,24 +340,25 @@ class ReportGenerator:
                 'Completion Status': completion_status
             })
         
-        # Sort by document number
-        overview_data.sort(key=lambda x: x['Document Number'])
-        
+        # NO SORTING - preserve original order from OrderedDict
         return overview_data
     
     def generate_pdf_report(self, report_data, output_folder, timestamp, sales_order_filter=None):
         """
         Generate PDF report organized by sales order with item-level details
+        Preserves the original order from the uploaded file
         """
         if not report_data:
             print("No data to generate PDF report")
             return
             
         try:
-            # Group data by sales order
-            sales_orders = defaultdict(list)
+            # Use OrderedDict to preserve the order of first appearance
+            sales_orders = OrderedDict()
             for record in report_data:
                 so_number = record.get('Document Number', 'Unknown')
+                if so_number not in sales_orders:
+                    sales_orders[so_number] = []
                 sales_orders[so_number].append(record)
             
             # Generate filename
@@ -399,7 +408,7 @@ class ReportGenerator:
             
             pdf.ln(10)
             
-            # Detailed report by sales order
+            # Detailed report by sales order (preserves original order)
             pdf.set_font('Arial', 'B', 14)
             pdf.cell(0, 8, 'Detailed Report by Sales Order', ln=True)
             pdf.ln(5)
