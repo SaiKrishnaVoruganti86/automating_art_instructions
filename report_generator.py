@@ -120,6 +120,72 @@ class ReportGenerator:
         
         return f"{generated_pdfs} out of {total_unique_logos}"
     
+    def get_error_reasons_summary(self, items):
+        """
+        Get a summary of error reasons for failed PDF generations in a sales order
+        Returns a formatted string with the most common error reasons
+        """
+        error_reasons = []
+        
+        for item in items:
+            execution_status = item.get('Execution Status', '')
+            logo_sku = str(item.get('LOGO', '')).strip()
+            
+            # Only consider items with valid logo SKUs that failed
+            if (logo_sku and logo_sku not in ['', '0', '0000', 'nan', 'NaN'] and 
+                execution_status in ['FAILED', 'NO LOGO', 'NOT APPROVED']):
+                
+                error_message = item.get('Error Message', 'Unknown error')
+                
+                # Simplify common error messages for better readability
+                if 'Invalid Logo SKU:' in error_message:
+                    simplified_error = 'Invalid Logo SKU'
+                elif 'Logo info not found in database' in error_message:
+                    simplified_error = 'Logo not in database'
+                elif 'Logo images not found' in error_message:
+                    simplified_error = 'Logo images missing'
+                elif 'Status: Not Approved' in error_message:
+                    simplified_error = 'Not Approved'
+                elif 'Invalid Operational Code format' in error_message:
+                    simplified_error = 'Invalid Op Code format'
+                elif 'Invalid Operational Code:' in error_message and ('00' in error_message or '0' in error_message):
+                    simplified_error = 'Invalid Op Code (00/0/empty)'
+                elif 'Missing or empty Operational Code' in error_message:
+                    simplified_error = 'Missing Op Code'
+                elif 'Operational Code' in error_message and 'not 11 and not > 89' in error_message:
+                    simplified_error = 'Op Code not 11 or >89'
+                elif 'List must contain exactly one 11' in error_message:
+                    simplified_error = 'List Op Codes: need exactly one 11'
+                elif 'List contains codes < 60' in error_message:
+                    simplified_error = 'List Op Codes: contains <60'
+                elif 'No valid List of Operation Codes' in error_message:
+                    simplified_error = 'Missing List Op Codes for >89'
+                elif 'PDF generation error:' in error_message:
+                    simplified_error = 'PDF generation failed'
+                else:
+                    simplified_error = error_message[:30] + '...' if len(error_message) > 30 else error_message
+                
+                error_reasons.append(simplified_error)
+        
+        if not error_reasons:
+            return "No errors"
+        
+        # Count occurrences of each error type
+        from collections import Counter
+        error_counts = Counter(error_reasons)
+        
+        # Format the most common errors (top 3)
+        most_common = error_counts.most_common(3)
+        
+        if len(most_common) == 1:
+            return most_common[0][0]
+        elif len(most_common) <= 3:
+            return "; ".join([f"{error}" for error, count in most_common])
+        else:
+            return "; ".join([f"{error}" for error, count in most_common[:2]]) + "; ..."
+        
+        return formatted_errors
+    
     def generate_all_reports(self, report_data, output_folder, timestamp, sales_order_filter=None):
         """
         Generate all report formats (Excel, PDF)
@@ -327,7 +393,7 @@ class ReportGenerator:
     
     def create_simple_overview_data(self, report_data):
         """
-        Create simple overview data with Document Number, Completion Status, and PDF Generation Status
+        Create simple overview data with Document Number, Completion Status, PDF Generation Status, and Error Reason
         Preserves the original order from the uploaded file
         """
         # Use OrderedDict to preserve the order of first appearance
@@ -367,10 +433,14 @@ class ReportGenerator:
             # Calculate PDF generation status
             pdf_generation_status = self.calculate_pdf_generation_status(items)
             
+            # Get error reasons summary
+            error_reasons = self.get_error_reasons_summary(items)
+            
             overview_data.append({
                 'Document Number': so_number,
                 'Completion Status': completion_status,
-                'PDF Generation Status': pdf_generation_status
+                'PDF Generation Status': pdf_generation_status,
+                'Error Reason': error_reasons
             })
         
         # NO SORTING - preserve original order from OrderedDict
