@@ -91,6 +91,35 @@ class ReportGenerator:
         # NO SORTING - preserve original order from OrderedDict
         return overview_data
     
+    def calculate_pdf_generation_status(self, items):
+        """
+        Calculate PDF generation status for a sales order
+        Returns a formatted string showing generated PDFs vs total unique logo SKUs
+        """
+        # Get unique logo SKUs for this sales order (excluding invalid ones)
+        unique_logos = set()
+        pdf_generated_logos = set()
+        
+        for item in items:
+            logo_sku = str(item.get('LOGO', '')).strip()
+            
+            # Skip invalid logo SKUs
+            if logo_sku and logo_sku not in ['', '0', '0000', 'nan', 'NaN']:
+                unique_logos.add(logo_sku)
+                
+                # Check if PDF was successfully generated for this logo
+                execution_status = item.get('Execution Status', '')
+                if execution_status == 'SUCCESS':
+                    pdf_generated_logos.add(logo_sku)
+        
+        total_unique_logos = len(unique_logos)
+        generated_pdfs = len(pdf_generated_logos)
+        
+        if total_unique_logos == 0:
+            return "0 out of 0 (No valid logos)"
+        
+        return f"{generated_pdfs} out of {total_unique_logos}"
+    
     def generate_all_reports(self, report_data, output_folder, timestamp, sales_order_filter=None):
         """
         Generate all report formats (Excel, PDF)
@@ -213,7 +242,7 @@ class ReportGenerator:
     
     def generate_overview_excel_report(self, report_data, output_folder, timestamp, sales_order_filter=None):
         """
-        Generate overview Excel report with only Document Number and Completion Status
+        Generate overview Excel report with Document Number, Completion Status, and PDF Generation Status
         Preserves the original order from the uploaded file
         """
         if not report_data:
@@ -298,7 +327,7 @@ class ReportGenerator:
     
     def create_simple_overview_data(self, report_data):
         """
-        Create simple overview data with only Document Number and Completion Status
+        Create simple overview data with Document Number, Completion Status, and PDF Generation Status
         Preserves the original order from the uploaded file
         """
         # Use OrderedDict to preserve the order of first appearance
@@ -335,9 +364,13 @@ class ReportGenerator:
             else:
                 completion_status = "PARTIAL SUCCESS"
             
+            # Calculate PDF generation status
+            pdf_generation_status = self.calculate_pdf_generation_status(items)
+            
             overview_data.append({
                 'Document Number': so_number,
-                'Completion Status': completion_status
+                'Completion Status': completion_status,
+                'PDF Generation Status': pdf_generation_status
             })
         
         # NO SORTING - preserve original order from OrderedDict
@@ -432,6 +465,9 @@ class ReportGenerator:
                 # Include only NO LOGO as success for success rate calculation (NOT APPROVED is considered failure)
                 so_success_rate = ((so_success + so_no_logo) / so_total * 100) if so_total > 0 else 0
                 
+                # Calculate PDF generation status
+                pdf_generation_status = self.calculate_pdf_generation_status(items)
+                
                 # Determine completion status with special handling for NOT APPROVED
                 # NOT APPROVED: If ALL items are NOT APPROVED (no SUCCESS, FAILED, or NO LOGO items)
                 # FULLY SUCCESS: All items are either SUCCESS or NO LOGO (100% success rate)
@@ -453,6 +489,7 @@ class ReportGenerator:
                 pdf.set_font('Arial', '', 10)
                 pdf.cell(0, 5, f'Items: {so_total} | Success: {so_success} | Failed: {so_failed} | NO LOGO: {so_no_logo} | NOT APPROVED: {so_not_approved}', ln=True)
                 pdf.cell(0, 5, f'Success Rate: {so_success_rate:.1f}% (includes NO LOGO as success, NOT APPROVED as failure)', ln=True)
+                pdf.cell(0, 5, f'PDF Generation Status: {pdf_generation_status}', ln=True)
                 
                 # Add completion status with color
                 pdf.set_text_color(status_color[0], status_color[1], status_color[2])
