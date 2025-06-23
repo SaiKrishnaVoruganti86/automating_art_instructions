@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, send_file, redirect, url_for
+from flask import Flask, render_template, request, send_file, redirect, url_for, jsonify, session
 import pandas as pd
 from fpdf import FPDF
 import os
@@ -7,8 +7,13 @@ from werkzeug.utils import secure_filename
 from PIL import Image  # Added for image dimension detection
 from datetime import datetime  # Added for date formatting
 from report_generator import ReportGenerator  # Import our new reporting module
+import uuid
+import threading
+import time
 
 app = Flask(__name__)
+app.secret_key = 'your-secret-key-here-change-this-in-production'  # Add secret key for sessions
+
 UPLOAD_FOLDER = "uploads"
 OUTPUT_FOLDER = "outputs"
 LOGO_DB_FOLDER = "logo_database"  # New folder for logo database
@@ -24,6 +29,21 @@ os.makedirs(LOGO_IMAGES_FOLDER, exist_ok=True)
 
 # Global variable to store logo database
 logo_database = None
+
+# Progress tracking
+progress_status = {}  # Dictionary to store progress for each session
+
+def update_progress(session_id, status, progress=0, message="", current_step="", total_steps=0):
+    """Update progress status for a session"""
+    if session_id in progress_status:
+        progress_status[session_id].update({
+            'status': status,  # 'processing', 'completed', 'error'
+            'progress': progress,  # 0-100
+            'message': message,
+            'current_step': current_step,
+            'total_steps': total_steps,
+            'timestamp': time.time()
+        })
 
 def load_logo_database():
     """Load the logo database into memory"""
@@ -666,7 +686,7 @@ def validate_row_for_processing(row, report_data):
         'LOGO': logo_sku,
         'VENDOR STYLE': safe_get(row.get("VENDOR STYLE", "")),
         'COLOR': safe_get(row.get("COLOR", "")),
-        'SIZE': safe_get(row.get("SIZE", "")),
+        'SIZE': safe_get(row.get("SIZE", "")),  # Added SIZE field
         'SUBCATEGORY': safe_get(row.get("SUBCATEGORY", "")),
         'Quantity': safe_get(row.get("Quantity", "")),
         'Customer/Vendor Name': safe_get(row.get("Customer/Vendor Name", "")),
@@ -814,92 +834,78 @@ def validate_row_for_processing(row, report_data):
         report_data.append(row_data)
         return False, f'Operational Code {operational_code} is not 11 and not > 89'
 
-@app.route("/", methods=["GET", "POST"])
-def upload_file():
-    # Load logo database on each request (or you could load it once at startup)
-    load_logo_database()
-    
-    if request.method == "POST":
-        file = request.files["excel"]
-        sales_order_filter = request.form.get("sales_order", "").strip()
+def process_file_with_progress(file_path, sales_order_filter, session_id):
+    """
+    Process the file with progress updates - this replaces your main processing logic
+    """
+    try:
+        # Initialize progress
+        progress_status[session_id] = {
+            'status': 'processing',
+            'progress': 0,
+            'message': 'Starting file processing...',
+            'current_step': 'Initializing',
+            'total_steps': 8,
+            'timestamp': time.time()
+        }
         
-        if file.filename == "":
-            return redirect(request.url)
-        filename = secure_filename(file.filename)
-        file_path = os.path.join(UPLOAD_FOLDER, filename)
-        file.save(file_path)
-
-        # Read Excel or CSV file with LOGO column as string to preserve leading zeros
+        # Step 1: Load logo database
+        update_progress(session_id, 'processing', 5, 'Loading logo database...', 'Database Loading', 8)
+        load_logo_database()
+        time.sleep(0.5)  # Small delay for user feedback
+        
+        # Step 2: Read and process file
+        update_progress(session_id, 'processing', 15, 'Reading and processing uploaded file...', 'File Processing', 8)
         df = read_file_with_format_detection(file_path)
         df.columns = [col.strip() for col in df.columns]
+        time.sleep(0.5)
         
-        # Initialize report generator
-        report_gen = ReportGenerator()
-        report_data = []  # List to store all row processing results
-        
-        # Apply sales order filter if provided
+        # Step 3: Apply filters
+        update_progress(session_id, 'processing', 25, 'Applying filters and validation...', 'Data Filtering', 8)
         if sales_order_filter:
             df = filter_by_sales_order(df, sales_order_filter)
             if df.empty:
-                # Return to upload page with error message
-                return render_template("upload.html", 
-                                     error_message=f"No exact match found for Sales Order: '{sales_order_filter}'. Please enter the complete and exact sales order number.")
+                update_progress(session_id, 'error', 0, f'No exact match found for Sales Order: {sales_order_filter}', 'Error', 8)
+                return {'success': False, 'error': f'No exact match found for Sales Order: {sales_order_filter}'}
         
-        # Clean and preserve LOGO format
+        # Clean LOGO column
         if 'LOGO' in df.columns:
             def clean_logo_value(logo_val):
                 if pd.isna(logo_val) or logo_val in ['nan', 'NaN', '']:
                     return ""
-                
-                # Convert to string and clean
                 logo_str = str(logo_val).strip()
-                
-                # Handle float-like strings (e.g., "9.0" -> "9")
                 if logo_str.endswith('.0'):
                     logo_str = logo_str[:-2]
-                
-                # Skip empty or invalid values
                 if logo_str in ['', 'nan', 'NaN', '0', '0000']:
                     return ""
-                
-                # Auto-pad numeric values to 4 digits for consistency
                 if logo_str.isdigit() and len(logo_str) < 4:
-                    logo_str = logo_str.zfill(4)  # Pad to 4 digits: "9" -> "0009"
-                    
+                    logo_str = logo_str.zfill(4)
                 return logo_str
             
             df['LOGO'] = df['LOGO'].apply(clean_logo_value)
-            print("LOGO column processed to preserve original format")
-            
-            # Show sample of LOGO values for debugging
-            sample_logos = df['LOGO'].dropna().unique()[:10]
-            print(f"Sample LOGO values detected: {list(sample_logos)}")
-
-        # Clear output folder
-        for f in os.listdir(OUTPUT_FOLDER):
-            os.remove(os.path.join(OUTPUT_FOLDER, f))
-
-        pdf_count = 0  # Track number of PDFs generated
         
-        # Process each row for validation and reporting
+        # Step 4: Validate data
+        update_progress(session_id, 'processing', 40, 'Validating data and checking requirements...', 'Data Validation', 8)
+        report_data = []
+        
+        # Process each row for validation
         for index, row in df.iterrows():
             is_valid, error_msg = validate_row_for_processing(row, report_data)
-            
             if not is_valid:
                 print(f"Row {index + 1}: {error_msg}")
-                continue
-            
-            # If validation passes, continue with PDF generation
-            doc_num = safe_get(row["Document Number"])
-            logo_sku = safe_get(row["LOGO"])
-            
-            # Group logic will be handled below...
-
-        # Group by both Document Number AND Logo SKU to handle multiple logos per SO
-        # Filter out invalid rows first
-        valid_df = df[df['LOGO'] != ""]  # Only rows with valid logos
         
-        # Further filter by validation logic
+        time.sleep(0.5)
+        
+        # Step 5: Clear output folder and prepare for PDF generation
+        update_progress(session_id, 'processing', 50, 'Preparing output folder...', 'Setup', 8)
+        for f in os.listdir(OUTPUT_FOLDER):
+            os.remove(os.path.join(OUTPUT_FOLDER, f))
+        
+        # Step 6: Generate PDFs
+        update_progress(session_id, 'processing', 60, 'Generating PDF documents...', 'PDF Generation', 8)
+        
+        # Filter valid rows and group by Document Number and Logo SKU
+        valid_df = df[df['LOGO'] != ""]
         final_valid_rows = []
         for index, row in valid_df.iterrows():
             temp_report = []
@@ -907,11 +913,19 @@ def upload_file():
             if is_valid:
                 final_valid_rows.append(row)
         
+        pdf_count = 0
         if final_valid_rows:
             valid_df = pd.DataFrame(final_valid_rows)
             grouped = valid_df.groupby(["Document Number", "LOGO"])
-
-            for (doc_num, logo_sku), group in grouped:
+            total_groups = len(grouped)
+            
+            for group_index, ((doc_num, logo_sku), group) in enumerate(grouped):
+                # Update progress for each PDF
+                pdf_progress = 60 + (group_index / total_groups) * 20  # PDF generation takes 20% (60-80%)
+                update_progress(session_id, 'processing', pdf_progress, 
+                              f'Generating PDF {group_index + 1} of {total_groups} (SO: {doc_num}, Logo: {logo_sku})', 
+                              'PDF Generation', 8)
+                
                 try:
                     # Generate PDF (your existing PDF generation code)
                     pdf = FPDF(orientation="P", unit="mm", format=(190.5, 254.0))
@@ -1128,10 +1142,6 @@ def upload_file():
     
                         continue  # Skip this group
 
-
-                    # (Rest of your PDF generation code...)
-                    # I'll continue with the logo section and other parts...
-                    
                     # Calculate proportional widths that add up to usable_width
                     logo_sku_label_width = usable_width * 0.10   
                     logo_sku_value_width = usable_width * 0.08   
@@ -1222,44 +1232,106 @@ def upload_file():
                             report_data[idx]['Execution Status'] = 'FAILED'
                             report_data[idx]['Error Message'] = f'PDF generation error: {str(e)}'
 
-        # Generate comprehensive reports
+        # Step 7: Generate reports
+        update_progress(session_id, 'processing', 85, 'Generating comprehensive reports...', 'Report Generation', 8)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         
         try:
+            report_gen = ReportGenerator()
             report_gen.generate_all_reports(
                 report_data=report_data,
                 output_folder=OUTPUT_FOLDER,
                 timestamp=timestamp,
                 sales_order_filter=sales_order_filter
             )
-            print("Reports generated successfully")
         except Exception as e:
             print(f"Error generating reports: {e}")
-
-        # Check if any PDFs were generated
-        if pdf_count == 0:
-            if sales_order_filter:
-                error_msg = f"No art instructions generated for Sales Order '{sales_order_filter}'. Please check that the sales order exists and meets the processing criteria."
-            else:
-                error_msg = "No art instructions generated. Please check that your data meets the processing criteria (valid logos, operational codes, etc.)."
-            
-            return render_template("upload.html", error_message=error_msg)
-
-        # Create ZIP file including reports
+        
+        time.sleep(0.5)
+        
+        # Step 8: Create ZIP file
+        update_progress(session_id, 'processing', 95, 'Creating ZIP file with all documents...', 'Finalizing', 8)
         zip_path = os.path.join(OUTPUT_FOLDER, ZIP_NAME)
         with zipfile.ZipFile(zip_path, "w") as zipf:
             for fname in os.listdir(OUTPUT_FOLDER):
                 if fname.endswith((".pdf", ".xlsx", ".txt", ".json")) and fname != ZIP_NAME:
                     zipf.write(os.path.join(OUTPUT_FOLDER, fname), fname)
-
-        # Success message
+        
+        # Completion
         success_msg = f"Successfully generated {pdf_count} art instruction PDF(s) with execution report"
         if sales_order_filter:
             success_msg += f" for Sales Order '{sales_order_filter}'"
         
-        return redirect(url_for("download_file", success=success_msg))
+        update_progress(session_id, 'completed', 100, success_msg, 'Complete', 8)
+        
+        return {'success': True, 'message': success_msg, 'pdf_count': pdf_count}
+        
+    except Exception as e:
+        update_progress(session_id, 'error', 0, f'Error during processing: {str(e)}', 'Error', 8)
+        return {'success': False, 'error': str(e)}
 
+@app.route("/", methods=["GET", "POST"])
+def upload_file():
+    # Load logo database on each request
+    load_logo_database()
+    
+    if request.method == "POST":
+        file = request.files["excel"]
+        sales_order_filter = request.form.get("sales_order", "").strip()
+        
+        if file.filename == "":
+            return redirect(request.url)
+            
+        # Generate unique session ID for this processing task
+        session_id = str(uuid.uuid4())
+        session['processing_id'] = session_id
+        
+        # Save uploaded file
+        filename = secure_filename(file.filename)
+        file_path = os.path.join(UPLOAD_FOLDER, filename)
+        file.save(file_path)
+        
+        # Start processing in background thread
+        def background_process():
+            process_file_with_progress(file_path, sales_order_filter, session_id)
+        
+        thread = threading.Thread(target=background_process)
+        thread.daemon = True
+        thread.start()
+        
+        # Redirect to progress page
+        return redirect(url_for('progress_page', session_id=session_id))
+    
     return render_template("upload.html")
+
+@app.route("/progress/<session_id>")
+def progress_page(session_id):
+    """Display progress page"""
+    return render_template("progress.html", session_id=session_id)
+
+@app.route("/api/progress/<session_id>")
+def get_progress(session_id):
+    """API endpoint to get current progress"""
+    if session_id in progress_status:
+        return jsonify(progress_status[session_id])
+    else:
+        return jsonify({
+            'status': 'not_found',
+            'progress': 0,
+            'message': 'Processing session not found',
+            'current_step': '',
+            'total_steps': 0
+        })
+
+@app.route("/download/<session_id>")
+def download_file_with_session(session_id):
+    """Download file after processing complete"""
+    if session_id in progress_status and progress_status[session_id]['status'] == 'completed':
+        # Clean up progress status
+        del progress_status[session_id]
+        return send_file(os.path.join(OUTPUT_FOLDER, ZIP_NAME), as_attachment=True)
+    else:
+        return redirect(url_for('upload_file'))
 
 @app.route("/download")
 def download_file():
