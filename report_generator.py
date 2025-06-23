@@ -427,14 +427,14 @@ class ReportGenerator:
             pdf.ln(5)
             
             pdf.set_font('Arial', '', 12)
-            pdf.cell(0, 8, f'Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}', ln=True, align='C')
+            pdf.cell(0, 8, f'Generated: {datetime.now().strftime("%m/%d/%Y %H:%M:%S")}', ln=True, align='C')
             
             if sales_order_filter:
                 pdf.cell(0, 8, f'Filtered by Sales Order: {sales_order_filter}', ln=True, align='C')
             
             pdf.ln(10)
             
-            # Summary statistics (updated to include NO LOGO and NOT APPROVED counts)
+            # Summary statistics (removed Total Sales Orders)
             total_records = len(report_data)
             success_count = sum(1 for record in report_data if record.get('Execution Status') == 'SUCCESS')
             failed_count = sum(1 for record in report_data if record.get('Execution Status') == 'FAILED')
@@ -454,7 +454,49 @@ class ReportGenerator:
             pdf.cell(0, 6, f'NO LOGO (Invalid Logo SKU): {no_logo_count}', ln=True)
             pdf.cell(0, 6, f'NOT APPROVED: {not_approved_count}', ln=True)
             pdf.cell(0, 6, f'Success Rate: {success_rate:.1f}% (includes NO LOGO as success, NOT APPROVED as failure)', ln=True)
+            
+            pdf.ln(10)
+            
+            # Sales Orders Summary Statistics
+            so_fully_success = 0
+            so_partial_success = 0
+            so_not_approved = 0
+            so_total_failed = 0
+            
+            for so_number, items in sales_orders.items():
+                so_total = len(items)
+                so_success = sum(1 for item in items if item.get('Execution Status') == 'SUCCESS')
+                so_no_logo = sum(1 for item in items if item.get('Execution Status') == 'NO LOGO')
+                so_failed = sum(1 for item in items if item.get('Execution Status') == 'FAILED')
+                so_not_approved_items = sum(1 for item in items if item.get('Execution Status') == 'NOT APPROVED')
+                
+                # Calculate success rate for this SO
+                so_success_rate = ((so_success + so_no_logo) / so_total * 100) if so_total > 0 else 0
+                
+                # Categorize this sales order
+                if so_not_approved_items == so_total:  # All items are NOT APPROVED
+                    so_not_approved += 1
+                elif so_success_rate == 100:
+                    so_fully_success += 1
+                elif so_success_rate == 0:
+                    so_total_failed += 1
+                else:
+                    so_partial_success += 1
+            
+            pdf.set_font('Arial', 'B', 14)
+            pdf.cell(0, 8, 'Sales Orders Summary Statistics', ln=True)
+            pdf.ln(2)
+            
+            # Calculate sales orders success rate
+            so_success_rate = (so_fully_success / len(sales_orders) * 100) if len(sales_orders) > 0 else 0
+            
+            pdf.set_font('Arial', '', 10)
             pdf.cell(0, 6, f'Total Sales Orders: {len(sales_orders)}', ln=True)
+            pdf.cell(0, 6, f'No of Sales Orders Fully Success: {so_fully_success}', ln=True)
+            pdf.cell(0, 6, f'No of Sales Orders Partial Success: {so_partial_success}', ln=True)
+            pdf.cell(0, 6, f'No of Sales Orders Total Failed: {so_total_failed}', ln=True)
+            pdf.cell(0, 6, f'No of Sales Orders Not Approved: {so_not_approved}', ln=True)
+            pdf.cell(0, 6, f'Sales Orders Success Rate: {so_success_rate:.1f}% ({so_fully_success} out of {len(sales_orders)})', ln=True)
             
             pdf.ln(10)
             
@@ -518,25 +560,28 @@ class ReportGenerator:
                 # Customer info (from first item)
                 if items:
                     customer_name = items[0].get('Customer/Vendor Name', 'N/A')
-                    due_date = items[0].get('Due Date', 'N/A')
+                    due_date_raw = items[0].get('Due Date', 'N/A')
+                    # Format due date
+                    due_date = self.format_date_for_display(due_date_raw) if due_date_raw != 'N/A' else 'N/A'
                     pdf.cell(0, 5, f'Customer: {customer_name}', ln=True)
                     pdf.cell(0, 5, f'Due Date: {due_date}', ln=True)
                     pdf.ln(3)
                 
-                # Items table header
+                # Items table header with new column order and widths
                 pdf.set_font('Arial', 'B', 8)
-                col_widths = [15, 20, 25, 20, 20, 15, 30, 45]  # Adjust as needed
-                headers = ['Logo', 'Style', 'Color', 'Description', 'Qty', 'Op Code', 'Status', 'Error Message']
+                # Column widths: Logo(20), Status(20), Error Message(35), Description(25), Style(20), Color(15), Size(10), Qty(10), Op Code(10)
+                col_widths = [20, 20, 35, 25, 20, 15, 10, 10, 10]
+                headers = ['Logo', 'Status', 'Error Message', 'Description', 'Style', 'Color', 'Size', 'Qty', 'Op Code']
                 
                 for i, header in enumerate(headers):
                     pdf.cell(col_widths[i], 6, header, 1, 0, 'C')
                 pdf.ln()
                 
-                # Items data
+                # Items data with multi-line support
                 pdf.set_font('Arial', '', 7)
                 for item in items:
                     # Check if we need a new page
-                    if pdf.get_y() > 270:
+                    if pdf.get_y() > 260:
                         pdf.add_page()
                         # Repeat header on new page
                         pdf.set_font('Arial', 'B', 8)
@@ -545,20 +590,39 @@ class ReportGenerator:
                         pdf.ln()
                         pdf.set_font('Arial', '', 7)
                     
-                    values = [
-                        str(item.get('LOGO', ''))[:12],  # Truncate long values
-                        str(item.get('VENDOR STYLE', ''))[:18],
-                        str(item.get('COLOR', ''))[:22],
-                        str(item.get('SUBCATEGORY', ''))[:18],
-                        str(item.get('Quantity', ''))[:12],
-                        str(item.get('OPERATIONAL CODE', ''))[:12],
-                        str(item.get('Execution Status', ''))[:8],
-                        str(item.get('Error Message', ''))[:40]
-                    ]
+                    # Prepare values with formatting
+                    logo_val = str(item.get('LOGO', ''))
+                    status_val = str(item.get('Execution Status', ''))
+                    error_val = str(item.get('Error Message', ''))
+                    desc_val = str(item.get('SUBCATEGORY', ''))
+                    style_val = str(item.get('VENDOR STYLE', ''))
+                    color_val = str(item.get('COLOR', ''))
+                    size_val = str(item.get('SIZE', ''))
+                    qty_val = str(item.get('Quantity', ''))
+                    op_code_raw = item.get('OPERATIONAL CODE', '')
+                    op_code_val = self.format_operational_code(op_code_raw)
                     
-                    for i, value in enumerate(values):
-                        pdf.cell(col_widths[i], 5, value, 1, 0, 'L')
-                    pdf.ln()
+                    values = [logo_val, status_val, error_val, desc_val, style_val, color_val, size_val, qty_val, op_code_val]
+                    
+                    # Calculate required height for this row based on text wrapping
+                    row_height = self.calculate_row_height(pdf, values, col_widths)
+                    
+                    # Store current position
+                    start_x = pdf.get_x()
+                    start_y = pdf.get_y()
+                    
+                    # Draw cells with proper text wrapping
+                    for i, (value, width) in enumerate(zip(values, col_widths)):
+                        cell_x = start_x + sum(col_widths[:i])
+                        
+                        # Draw cell border
+                        pdf.rect(cell_x, start_y, width, row_height)
+                        
+                        # Add text with wrapping
+                        self.add_wrapped_text(pdf, value, cell_x, start_y, width, row_height)
+                    
+                    # Move to next row
+                    pdf.set_xy(start_x, start_y + row_height)
                 
                 pdf.ln(5)  # Space between sales orders
             
@@ -697,3 +761,79 @@ class ReportGenerator:
         except Exception as e:
             print(f"Error formatting operational code '{op_code_value}': {e}")
             return str(op_code_value)
+    
+    def calculate_row_height(self, pdf, values, col_widths):
+        """
+        Calculate the required height for a table row based on text wrapping
+        """
+        max_lines = 1
+        
+        for value, width in zip(values, col_widths):
+            if not value:
+                continue
+                
+            # Calculate available width (subtract padding)
+            available_width = width - 2
+            
+            # Get text width
+            text_width = pdf.get_string_width(str(value))
+            
+            # Calculate number of lines needed
+            if text_width > available_width:
+                lines_needed = int(text_width / available_width) + 1
+                max_lines = max(max_lines, lines_needed)
+        
+        # Return height (base height * number of lines)
+        return max_lines * 5
+    
+    def add_wrapped_text(self, pdf, text, x, y, width, height):
+        """
+        Add text to a cell with proper wrapping
+        """
+        if not text:
+            return
+        
+        text = str(text)
+        available_width = width - 2  # Subtract padding
+        line_height = 5
+        max_lines = int(height / line_height)
+        
+        # Set position with padding
+        pdf.set_xy(x + 1, y + 1)
+        
+        # If text fits in one line
+        if pdf.get_string_width(text) <= available_width:
+            pdf.cell(width - 2, line_height, text, 0, 0, 'L')
+            return
+        
+        # Split text into words
+        words = text.split()
+        lines = []
+        current_line = ""
+        
+        for word in words:
+            test_line = current_line + (" " if current_line else "") + word
+            if pdf.get_string_width(test_line) <= available_width:
+                current_line = test_line
+            else:
+                if current_line:
+                    lines.append(current_line)
+                    current_line = word
+                else:
+                    # Single word is too long, truncate it
+                    truncated_word = word
+                    while pdf.get_string_width(truncated_word + "...") > available_width and len(truncated_word) > 1:
+                        truncated_word = truncated_word[:-1]
+                    lines.append(truncated_word + "...")
+                    current_line = ""
+        
+        if current_line:
+            lines.append(current_line)
+        
+        # Limit to max lines that fit in cell height
+        lines = lines[:max_lines]
+        
+        # Add lines to PDF
+        for i, line in enumerate(lines):
+            pdf.set_xy(x + 1, y + 1 + (i * line_height))
+            pdf.cell(width - 2, line_height, line, 0, 0, 'L')
