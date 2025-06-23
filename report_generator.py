@@ -144,7 +144,7 @@ class ReportGenerator:
     
     def generate_detailed_excel_report(self, report_data, output_folder, timestamp, sales_order_filter=None):
         """
-        Generate detailed Excel report with all data including execution status columns
+        Generate detailed Excel report with specified column order and fields
         Preserves the original order from the uploaded file
         """
         if not report_data:
@@ -155,22 +155,39 @@ class ReportGenerator:
             # Convert report data to DataFrame - this preserves the original order
             df = pd.DataFrame(report_data)
             
-            # Ensure all required columns exist
-            required_columns = [
-                'Document Number', 'LOGO', 'VENDOR STYLE', 'COLOR', 'SUBCATEGORY', 
-                'Quantity', 'Customer/Vendor Name', 'Due Date', 'DueDateStatus',
-                'OPERATIONAL CODE', 'List of Operation Codes', 'LOGO POSITION',
-                'STITCH COUNT', 'NOTES', 'FILE NAME', 'Execution Status', 'Error Message'
+            # Define the specific columns in the requested order
+            detailed_columns = [
+                'Document Number',
+                'LOGO', 
+                'Execution Status',
+                'SUBCATEGORY',
+                'VENDOR STYLE', 
+                'COLOR',
+                'SIZE',  # SIZE column as requested
+                'Quantity',
+                'Customer/Vendor Name',
+                'DueDateStatus',
+                'Due Date',
+                'OPERATIONAL CODE',
+                'List of Operation Codes',
+                'Error Message'
             ]
             
-            for col in required_columns:
+            # Ensure all required columns exist (add empty columns if missing)
+            for col in detailed_columns:
                 if col not in df.columns:
                     df[col] = ''
             
-            # Reorder columns to match input format with execution columns at the end
-            input_columns = [col for col in required_columns if col not in ['Execution Status', 'Error Message']]
-            final_columns = input_columns + ['Execution Status', 'Error Message']
-            df = df[final_columns]
+            # Format Due Date column to MM/dd/yyyy format
+            if 'Due Date' in df.columns:
+                df['Due Date'] = df['Due Date'].apply(self.format_date_for_display)
+            
+            # Format OPERATIONAL CODE column to remove decimal places
+            if 'OPERATIONAL CODE' in df.columns:
+                df['OPERATIONAL CODE'] = df['OPERATIONAL CODE'].apply(self.format_operational_code)
+            
+            # Select only the specified columns in the requested order
+            df = df[detailed_columns]
             
             # NO SORTING - keep original order from uploaded file
             
@@ -605,3 +622,78 @@ class ReportGenerator:
         )
         
         return dict(error_stats)
+    
+    def format_date_for_display(self, date_value):
+        """
+        Format date values to MM/dd/yyyy format for display in reports
+        """
+        if pd.isna(date_value) or date_value == "" or str(date_value).strip() == "":
+            return ""
+        
+        try:
+            # Handle different input types
+            if isinstance(date_value, str):
+                date_str = str(date_value).strip()
+                
+                # If it's already in MM/dd/yyyy format, return as-is
+                if '/' in date_str and len(date_str.split('/')) == 3:
+                    parts = date_str.split('/')
+                    if len(parts[2]) == 4:  # Already in MM/dd/yyyy format
+                        return date_str
+                
+                # Try to parse various string formats
+                for fmt in ['%Y-%m-%d %H:%M:%S', '%Y-%m-%d', '%m/%d/%Y', '%m/%d/%y', '%Y/%m/%d', '%d/%m/%Y']:
+                    try:
+                        date_obj = datetime.strptime(date_str, fmt)
+                        return date_obj.strftime('%m/%d/%Y')
+                    except ValueError:
+                        continue
+                
+                # If no format worked, return original
+                return date_str
+            
+            elif isinstance(date_value, (int, float)):
+                # Excel serial date number
+                if date_value > 25000:  # Reasonable range for Excel dates
+                    excel_epoch = datetime(1899, 12, 30)
+                    date_obj = excel_epoch + pd.Timedelta(days=date_value)
+                    return date_obj.strftime('%m/%d/%Y')
+                else:
+                    return str(int(date_value))
+            else:
+                # Pandas datetime or other datetime object
+                date_obj = pd.to_datetime(date_value)
+                return date_obj.strftime('%m/%d/%Y')
+                
+        except Exception as e:
+            print(f"Error formatting date '{date_value}': {e}")
+            return str(date_value)
+    
+    def format_operational_code(self, op_code_value):
+        """
+        Format operational code to remove decimal places (11.0 -> 11)
+        """
+        if pd.isna(op_code_value) or op_code_value == "" or str(op_code_value).strip() == "":
+            return ""
+        
+        try:
+            # Convert to string and check if it's a number
+            op_code_str = str(op_code_value).strip()
+            
+            # If it's a float-like number (e.g., "11.0"), convert to integer
+            if '.' in op_code_str and op_code_str.replace('.', '').isdigit():
+                try:
+                    float_val = float(op_code_str)
+                    if float_val.is_integer():
+                        return str(int(float_val))
+                    else:
+                        return op_code_str
+                except ValueError:
+                    return op_code_str
+            
+            # If it's already an integer or doesn't have decimal, return as-is
+            return op_code_str
+            
+        except Exception as e:
+            print(f"Error formatting operational code '{op_code_value}': {e}")
+            return str(op_code_value)
