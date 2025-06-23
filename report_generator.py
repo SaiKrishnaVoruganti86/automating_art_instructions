@@ -569,8 +569,28 @@ class ReportGenerator:
                 
                 # Items table header with new column order and widths
                 pdf.set_font('Arial', 'B', 8)
-                # Column widths: Logo(20), Status(20), Error Message(35), Description(25), Style(20), Color(15), Size(10), Qty(10), Op Code(10)
-                col_widths = [20, 20, 35, 25, 20, 15, 10, 10, 10]
+                # Calculate available width (page width minus margins)
+                page_width = pdf.w  # Total page width
+                left_margin = pdf.l_margin
+                right_margin = pdf.r_margin
+                available_width = page_width - left_margin - right_margin
+                
+                # Distribute column widths proportionally to use full available width
+                # Original proportions: Logo(20), Status(20), Error Message(35), Description(25), Style(20), Color(15), Size(10), Qty(10), Op Code(10)
+                total_proportions = 20 + 20 + 35 + 25 + 20 + 15 + 10 + 10 + 10  # 165 total
+                
+                col_widths = [
+                    (20 / total_proportions) * available_width,  # Logo
+                    (20 / total_proportions) * available_width,  # Status
+                    (35 / total_proportions) * available_width,  # Error Message
+                    (25 / total_proportions) * available_width,  # Description
+                    (20 / total_proportions) * available_width,  # Style
+                    (15 / total_proportions) * available_width,  # Color
+                    (10 / total_proportions) * available_width,  # Size
+                    (10 / total_proportions) * available_width,  # Qty
+                    (10 / total_proportions) * available_width   # Op Code
+                ]
+                
                 headers = ['Logo', 'Status', 'Error Message', 'Description', 'Style', 'Color', 'Size', 'Qty', 'Op Code']
                 
                 for i, header in enumerate(headers):
