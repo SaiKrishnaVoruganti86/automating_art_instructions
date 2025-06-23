@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Processing Art Instructions - Please Wait</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        .progress-container {
+            min-height: 60vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .progress-card {
+            width: 100%;
+            max-width: 600px;
+        }
+        .step-indicator {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 2rem;
+        }
+        .step {
+            flex: 1;
+            text-align: center;
+            position: relative;
+        }
+        .step::after {
+            content: '';
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            width: 100%;
+            height: 2px;
+            background: #dee2e6;
+            z-index: 1;
+        }
+        .step:last-child::after {
+            display: none;
+        }
+        .step-circle {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: #dee2e6;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 10px;
+            position: relative;
+            z-index: 2;
+            font-weight: bold;
+            color: #6c757d;
+        }
+        .step.active .step-circle {
+            background: #0d6efd;
+            color: white;
+        }
+        .step.completed .step-circle {
+            background: #198754;
+            color: white;
+        }
+        .step.completed::after {
+            background: #198754;
+        }
+        .pulse {
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+            100% { transform: scale(1); }
+        }
+        .status-message {
+            min-height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+        }
+    </style>
+</head>
+<body class="bg-light">
+<div class="container">
+    <div class="progress-container">
+        <div class="progress-card">
+            <div class="card shadow">
+                <div class="card-header bg-primary text-white text-center">
+                    <h4 class="mb-0">
+                        <i class="bi bi-gear-fill me-2"></i>
+                        Processing Art Instructions
+                    </h4>
+                </div>
+                <div class="card-body p-4">
+                    <!-- Step Indicator -->
+                    <div class="step-indicator">
+                        <div class="step" id="step-1">
+                            <div class="step-circle">1</div>
+                            <small>Setup</small>
+                        </div>
+                        <div class="step" id="step-2">
+                            <div class="step-circle">2</div>
+                            <small>Validation</small>
+                        </div>
+                        <div class="step" id="step-3">
+                            <div class="step-circle">3</div>
+                            <small>PDF Generation</small>
+                        </div>
+                        <div class="step" id="step-4">
+                            <div class="step-circle">4</div>
+                            <small>Reports</small>
+                        </div>
+                        <div class="step" id="step-5">
+                            <div class="step-circle">5</div>
+                            <small>Complete</small>
+                        </div>
+                    </div>
+                    
+                    <!-- Progress Bar -->
+                    <div class="mb-4">
+                        <div class="d-flex justify-content-between mb-2">
+                            <span class="fw-bold">Overall Progress</span>
+                            <span id="progressPercentage">0%</span>
+                        </div>
+                        <div class="progress" style="height: 20px;">
+                            <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                                 id="progressBar" role="progressbar" style="width: 0%">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Current Status -->
+                    <div class="status-message">
+                        <div class="text-center">
+                            <div class="spinner-border text-primary mb-3" id="loadingSpinner" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <div id="statusMessage" class="fw-bold text-primary">
+                                Initializing...
+                            </div>
+                            <div id="currentStep" class="text-muted small mt-2">
+                                Starting process...
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Action Buttons -->
+                    <div class="text-center mt-4">
+                        <button class="btn btn-success btn-lg" id="downloadBtn" style="display: none;">
+                            <i class="bi bi-download me-2"></i>Download Results
+                        </button>
+                        <button class="btn btn-danger btn-lg" id="errorBtn" style="display: none;">
+                            <i class="bi bi-exclamation-triangle me-2"></i>Processing Failed
+                        </button>
+                        <a href="/" class="btn btn-secondary ms-2" id="backBtn" style="display: none;">
+                            <i class="bi bi-arrow-left me-2"></i>Back to Upload
+                        </a>
+                    </div>
+                    
+                    <!-- Processing Details -->
+                    <div class="mt-4">
+                        <div class="alert alert-info">
+                            <i class="bi bi-info-circle me-2"></i>
+                            <strong>Please wait...</strong> The system is processing your file and generating art instructions. 
+                            This process may take several minutes depending on the size of your data.
+                            <br><br>
+                            <small class="text-muted">
+                                • Do not close this browser tab<br>
+                                • Do not refresh the page<br>
+                                • The page will automatically update when complete
+                            </small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const sessionId = '{{ session_id }}';
+let pollInterval;
+let currentProgress = 0;
+
+function updateStepIndicator(currentStepName, progress) {
+    // Reset all steps
+    document.querySelectorAll('.step').forEach(step => {
+        step.classList.remove('active', 'completed');
+    });
+    
+    // Determine which step we're on based on progress and step name
+    let activeStep = 1;
+    if (progress >= 5 && progress < 25) activeStep = 1;   // Setup phase
+    else if (progress >= 25 && progress < 60) activeStep = 2;  // Validation phase
+    else if (progress >= 60 && progress < 85) activeStep = 3;  // PDF Generation phase
+    else if (progress >= 85 && progress < 100) activeStep = 4; // Reports phase
+    else if (progress >= 100) activeStep = 5; // Complete
+    
+    // Mark completed steps
+    for (let i = 1; i < activeStep; i++) {
+        document.getElementById(`step-${i}`).classList.add('completed');
+    }
+    
+    // Mark active step
+    if (activeStep <= 5) {
+        const activeStepEl = document.getElementById(`step-${activeStep}`);
+        activeStepEl.classList.add('active');
+        if (progress < 100) {
+            activeStepEl.querySelector('.step-circle').classList.add('pulse');
+        }
+    }
+}
+
+function updateProgress(data) {
+    const progressBar = document.getElementById('progressBar');
+    const progressPercentage = document.getElementById('progressPercentage');
+    const statusMessage = document.getElementById('statusMessage');
+    const currentStep = document.getElementById('currentStep');
+    const loadingSpinner = document.getElementById('loadingSpinner');
+    const downloadBtn = document.getElementById('downloadBtn');
+    const errorBtn = document.getElementById('errorBtn');
+    const backBtn = document.getElementById('backBtn');
+    
+    // Update progress bar
+    progressBar.style.width = data.progress + '%';
+    progressPercentage.textContent = data.progress + '%';
+    
+    // Update step indicator
+    updateStepIndicator(data.current_step, data.progress);
+    
+    // Update status messages
+    statusMessage.textContent = data.message;
+    currentStep.textContent = data.current_step;
+    
+    if (data.status === 'completed') {
+        // Processing completed successfully
+        progressBar.classList.remove('progress-bar-striped', 'progress-bar-animated');
+        progressBar.classList.add('bg-success');
+        loadingSpinner.style.display = 'none';
+        statusMessage.className = 'fw-bold text-success';
+        downloadBtn.style.display = 'inline-block';
+        backBtn.style.display = 'inline-block';
+        
+        // Mark all steps as completed
+        document.querySelectorAll('.step').forEach(step => {
+            step.classList.remove('active');
+            step.classList.add('completed');
+        });
+        
+        // Set up download button
+        downloadBtn.onclick = function() {
+            window.location.href = `/download/${sessionId}`;
+        };
+        
+        clearInterval(pollInterval);
+        
+    } else if (data.status === 'error') {
+        // Processing failed
+        progressBar.classList.remove('progress-bar-striped', 'progress-bar-animated');
+        progressBar.classList.add('bg-danger');
+        loadingSpinner.style.display = 'none';
+        statusMessage.className = 'fw-bold text-danger';
+        errorBtn.style.display = 'inline-block';
+        backBtn.style.display = 'inline-block';
+        
+        clearInterval(pollInterval);
+    }
+}
+
+function pollProgress() {
+    fetch(`/api/progress/${sessionId}`)
+        .then(response => response.json())
+        .then(data => {
+            updateProgress(data);
+        })
+        .catch(error => {
+            console.error('Error polling progress:', error);
+            // Continue polling unless there's a persistent error
+        });
+}
+
+// Start polling when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    // Initial poll
+    pollProgress();
+    
+    // Poll every 1 second
+    pollInterval = setInterval(pollProgress, 1000);
+});
+
+// Clean up interval when page unloads
+window.addEventListener('beforeunload', function() {
+    if (pollInterval) {
+        clearInterval(pollInterval);
+    }
+});
+</script>
+</body>
+</html>
