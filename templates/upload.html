@@ -33,7 +33,7 @@
             <strong>Supported formats:</strong> Excel files (.xlsx, .xls) and CSV files (.csv)
         </p>
         
-        <form method="POST" enctype="multipart/form-data">
+        <form method="POST" enctype="multipart/form-data" id="uploadForm">
             <!-- Sales Order Filter Field -->
             <div class="mb-3">
                 <label for="salesOrder" class="form-label">Sales Order Number (Optional)</label>
@@ -57,11 +57,26 @@
             
             <!-- Submit Button -->
             <div class="d-grid gap-2">
-                <button class="btn btn-primary btn-lg" type="submit">
+                <button class="btn btn-primary btn-lg" type="submit" id="submitBtn">
                     <i class="bi bi-file-earmark-pdf"></i> Generate Art Instructions PDFs
                 </button>
             </div>
         </form>
+        
+        <!-- Processing Status (Hidden by default) -->
+        <div id="processingStatus" class="mt-4" style="display: none;">
+            <div class="alert alert-info">
+                <div class="d-flex align-items-center">
+                    <div class="spinner-border spinner-border-sm me-3" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <div>
+                        <strong>Processing your file...</strong><br>
+                        <small class="text-muted">Please wait while we generate your art instructions. This may take a few minutes.</small>
+                    </div>
+                </div>
+            </div>
+        </div>
         
         <!-- Instructions and Requirements -->
         <div class="mt-4">
@@ -103,5 +118,21 @@
 
 <!-- Bootstrap JavaScript -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+<script>
+document.getElementById('uploadForm').addEventListener('submit', function(e) {
+    // Show processing status
+    const submitBtn = document.getElementById('submitBtn');
+    const processingStatus = document.getElementById('processingStatus');
+    
+    // Disable submit button and show processing status
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Processing...';
+    processingStatus.style.display = 'block';
+    
+    // Scroll to processing status
+    processingStatus.scrollIntoView({ behavior: 'smooth' });
+});
+</script>
 </body>
 </html>
