@@ -666,6 +666,7 @@ def validate_row_for_processing(row, report_data):
         'LOGO': logo_sku,
         'VENDOR STYLE': safe_get(row.get("VENDOR STYLE", "")),
         'COLOR': safe_get(row.get("COLOR", "")),
+        'SIZE': safe_get(row.get("SIZE", "")),
         'SUBCATEGORY': safe_get(row.get("SUBCATEGORY", "")),
         'Quantity': safe_get(row.get("Quantity", "")),
         'Customer/Vendor Name': safe_get(row.get("Customer/Vendor Name", "")),
