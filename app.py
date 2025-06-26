@@ -1172,7 +1172,14 @@ def process_file_with_progress(file_path, sales_order_filter, session_id):
                     pdf.set_font("Arial", "B", 8.5)
                     pdf.cell(logo_pos_label_width, 5, "LOGO POSITION:", border=1, align="C")
                     pdf.set_font("Arial", "", 8.5)
-                    pdf.cell(logo_pos_value_width, 5, logo_pos, border=1)
+                    # Check if logo position needs yellow highlighting
+                    if logo_pos.strip().upper() != "LEFT CHEST":
+                        # Set yellow background color for highlighting (like a marker)
+                        pdf.set_fill_color(255, 255, 0)  # Yellow color
+                        pdf.cell(logo_pos_value_width, 5, logo_pos, border=1, fill=True)
+                        pdf.set_fill_color(255, 255, 255)  # Reset to white background
+                    else:
+                        pdf.cell(logo_pos_value_width, 5, logo_pos, border=1)
                     pdf.set_font("Arial", "B", 8.5)
                     pdf.cell(stitch_label_width, 5, "STITCH COUNT:", border=1, align="C")
                     pdf.set_font("Arial", "", 8.5)
