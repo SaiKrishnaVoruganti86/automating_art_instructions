@@ -11,6 +11,27 @@ import threading
 import time
 from pathlib import Path
 
+# CRITICAL: Set working directory to the executable's directory
+# This ensures relative paths work correctly when running as .exe
+if getattr(sys, 'frozen', False):
+    # Running as PyInstaller bundle
+    executable_dir = os.path.dirname(sys.executable)
+    # For onefile=False, the actual files are in the same directory as the .exe
+    bundle_dir = os.path.dirname(os.path.abspath(__file__))
+    if os.path.exists(os.path.join(bundle_dir, 'app.py')):
+        # Files are in the bundle directory (onefile=False)
+        working_dir = bundle_dir
+    else:
+        # Fallback to executable directory
+        working_dir = executable_dir
+else:
+    # Running in development
+    working_dir = os.path.dirname(os.path.abspath(__file__))
+
+os.chdir(working_dir)
+print(f"Working directory set to: {working_dir}")
+print(f"Executable location: {working_dir}")
+
 # Add the current directory to Python path
 current_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, current_dir)
@@ -30,9 +51,15 @@ def setup_directories():
     ]
     
     for directory in directories:
-        dir_path = os.path.join(current_dir, directory)
+        dir_path = os.path.join(working_dir, directory)
         os.makedirs(dir_path, exist_ok=True)
         print(f"✓ Directory verified: {directory}/")
+        
+        # Verify the directory actually exists and is writable
+        if os.path.exists(dir_path) and os.access(dir_path, os.W_OK):
+            print(f"  → {directory}/ is writable")
+        else:
+            print(f"  ⚠️  {directory}/ may not be writable")
 
 def check_required_files():
     """Check if required files exist"""
@@ -43,7 +70,7 @@ def check_required_files():
     
     missing_files = []
     for file_path, description in required_files.items():
-        full_path = os.path.join(current_dir, file_path)
+        full_path = os.path.join(working_dir, file_path)
         if not os.path.exists(full_path):
             missing_files.append(f"  ❌ {file_path} - {description}")
         else:
@@ -51,10 +78,34 @@ def check_required_files():
     
     return missing_files
 
+def verify_output_structure():
+    """Verify that the output structure is correctly set up"""
+    outputs_dir = os.path.join(working_dir, 'outputs')
+    
+    # Ensure outputs directory exists and is writable
+    os.makedirs(outputs_dir, exist_ok=True)
+    
+    # Test write access
+    test_file = os.path.join(outputs_dir, 'test_write.tmp')
+    try:
+        with open(test_file, 'w') as f:
+            f.write('test')
+        os.remove(test_file)
+        print(f"✓ Output directory is writable: {outputs_dir}")
+        return True
+    except Exception as e:
+        print(f"❌ Output directory write test failed: {e}")
+        return False
+
 def open_browser():
     """Open the web browser after a short delay"""
     time.sleep(3)  # Wait for Flask to start
-    webbrowser.open('http://127.0.0.1:5000')
+    try:
+        webbrowser.open('http://127.0.0.1:5000')
+        print("✓ Browser opened automatically")
+    except Exception as e:
+        print(f"⚠️  Could not open browser automatically: {e}")
+        print("Please manually open: http://127.0.0.1:5000")
 
 def main():
     """Main function to run the Flask app"""
@@ -62,10 +113,17 @@ def main():
     print("           ART INSTRUCTIONS GENERATOR v3.0")
     print("=" * 70)
     print("🚀 Starting application...")
+    print(f"📁 Executable location: {working_dir}")
     
     # Setup directories
     print("\n📁 Setting up directories...")
     setup_directories()
+    
+    # Verify output structure
+    print("\n🔧 Verifying output structure...")
+    if not verify_output_structure():
+        print("⚠️  Warning: Output directory may not be accessible")
+        print("   This could cause download issues")
     
     # Check required files
     print("\n📋 Checking required files...")
@@ -100,6 +158,7 @@ def main():
     print("\n🌐 Starting web server...")
     print("📱 Web interface will open automatically")
     print("🔗 Manual access: http://127.0.0.1:5000")
+    print(f"📂 Files will be saved to: {os.path.join(working_dir, 'outputs')}")
     print("\n⚠️  To stop the application:")
     print("   • Close this window, or")
     print("   • Press Ctrl+C in this window")

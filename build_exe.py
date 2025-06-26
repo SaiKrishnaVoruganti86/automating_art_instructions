@@ -8,6 +8,7 @@ import os
 import subprocess
 import sys
 import shutil
+import time
 from pathlib import Path
 
 def install_requirements():
@@ -22,24 +23,62 @@ def install_requirements():
         return False
     return True
 
+def safe_remove(path):
+    """Safely remove a file or directory with retry logic"""
+    if not os.path.exists(path):
+        return True
+    
+    max_retries = 5
+    for attempt in range(max_retries):
+        try:
+            if os.path.isfile(path):
+                # Make file writable before deletion
+                os.chmod(path, 0o777)
+                os.unlink(path)
+            else:
+                # Make directory and all contents writable
+                for root, dirs, files in os.walk(path):
+                    for dir in dirs:
+                        os.chmod(os.path.join(root, dir), 0o777)
+                    for file in files:
+                        os.chmod(os.path.join(root, file), 0o777)
+                shutil.rmtree(path)
+            return True
+        except PermissionError as e:
+            if attempt < max_retries - 1:
+                print(f"  ⚠️  Retry {attempt + 1}/{max_retries}: {e}")
+                time.sleep(1)  # Wait a second before retry
+            else:
+                print(f"  ❌ Failed to remove {path}: {e}")
+                return False
+        except Exception as e:
+            print(f"  ❌ Error removing {path}: {e}")
+            return False
+    return False
+
 def clean_build():
     """Clean previous build artifacts"""
-    folders_to_clean = ['build', 'dist', '__pycache__']
+    folders_to_clean = ['build', 'dist', '__pycache__', 'Art_Instructions_Package']
     
     print("🧹 Cleaning previous build artifacts...")
     for folder in folders_to_clean:
         if os.path.exists(folder):
-            shutil.rmtree(folder)
-            print(f"  Removed {folder}/")
+            if safe_remove(folder):
+                print(f"  Removed {folder}/")
+            else:
+                print(f"  ⚠️  Could not remove {folder}/, continuing anyway...")
     
     # Remove .pyc files
     for pyc_file in Path('.').rglob('*.pyc'):
-        pyc_file.unlink()
+        try:
+            pyc_file.unlink()
+        except:
+            pass
         
     # Remove __pycache__ directories
     for pycache_dir in Path('.').rglob('__pycache__'):
         if pycache_dir.is_dir():
-            shutil.rmtree(pycache_dir)
+            safe_remove(str(pycache_dir))
 
 def build_executable():
     """Build the executable using PyInstaller"""
@@ -55,8 +94,8 @@ def build_executable():
         subprocess.check_call(cmd)
         print("✅ Build completed successfully!")
         
-        # Check if exe was created
-        exe_path = Path('dist/Art_Instructions_Generator.exe')
+        # Check if exe was created (now it should be in a folder)
+        exe_path = Path('dist/Art_Instructions_Generator/Art_Instructions_Generator.exe')
         if exe_path.exists():
             size_mb = exe_path.stat().st_size / (1024 * 1024)
             print(f"📦 Executable created: {exe_path}")
@@ -78,18 +117,30 @@ def create_distribution_package():
     
     # Clean and create package directory
     if package_dir.exists():
-        shutil.rmtree(package_dir)
+        if not safe_remove(str(package_dir)):
+            print("⚠️  Could not remove existing package directory, continuing...")
+            return False
+    
     package_dir.mkdir()
     
-    # Copy executable
-    exe_source = Path('dist/Art_Instructions_Generator.exe')
-    if exe_source.exists():
-        shutil.copy2(exe_source, package_dir / 'Art_Instructions_Generator.exe')
-        print("  ✓ Copied executable")
+    # Copy the entire dist folder contents (this is now a directory, not a single file)
+    dist_source = Path('dist/Art_Instructions_Generator')
+    if dist_source.exists():
+        # Copy all contents from the dist folder
+        for item in dist_source.iterdir():
+            if item.is_file():
+                shutil.copy2(item, package_dir / item.name)
+                print(f"  ✓ Copied {item.name}")
+            elif item.is_dir():
+                shutil.copytree(item, package_dir / item.name)
+                print(f"  ✓ Copied {item.name}/ folder")
+    else:
+        print("❌ Dist folder not found")
+        return False
     
     # Create folder structure for user data
-    (package_dir / 'logo_database').mkdir()
-    (package_dir / 'logo_images').mkdir()
+    (package_dir / 'logo_database').mkdir(exist_ok=True)
+    (package_dir / 'logo_images').mkdir(exist_ok=True)
     print("  ✓ Created data folders")
     
     # Copy sample files if they exist
@@ -98,8 +149,8 @@ def create_distribution_package():
         ('static/jauniforms.png', 'static/')
     ]
     
-    # Create static folder
-    (package_dir / 'static').mkdir()
+    # Create static folder if it doesn't exist
+    (package_dir / 'static').mkdir(exist_ok=True)
     
     for source, dest in sample_files:
         source_path = Path(source)
@@ -159,6 +210,7 @@ def create_distribution_package():
 ```
 Art_Instructions_Package/
 ├── Art_Instructions_Generator.exe    # Main application
+├── _internal/                        # Application files (DO NOT MODIFY)
 ├── logo_database/                    # Place ArtDBSample.xlsx here
 │   └── ArtDBSample.xlsx              # Logo database file
 ├── logo_images/                      # Place logo images here
@@ -191,18 +243,23 @@ Art_Instructions_Package/
 - Try running as administrator (right-click → "Run as administrator")
 
 **Logo database not loading:**
-- Ensure `ArtDBSample.xlsx` is in the `logo_database/` folder
+- Ensure `ArtDBSample.xlsx` is in the `logo_database/` folder next to the .exe
 - Check the file isn't corrupted or password-protected
 - File must be named exactly `ArtDBSample.xlsx`
 
 **Logo images not showing:**
-- Check logo images are in the `logo_images/` folder
+- Check logo images are in the `logo_images/` folder next to the .exe
 - Verify naming convention: `[SKU][suffix].[extension]`
 - Supported formats: .png, .jpg, .jpeg, .gif, .bmp, .tiff
 
 **Browser doesn't open automatically:**
 - Manually open your browser and go to: http://127.0.0.1:5000
 - Make sure no other application is using port 5000
+
+**Download button not working:**
+- Make sure the application has write permissions to its folder
+- Try running as administrator if needed
+- Check that antivirus isn't blocking file creation
 
 ### 8. Data Requirements
 
@@ -226,10 +283,15 @@ Art_Instructions_Package/
 ### 10. Version Information
 - Version: 3.0
 - Features: Progress tracking, enhanced reporting, PDF formatting
-- Build Date: """ + str(Path('dist/Art_Instructions_Generator.exe').stat().st_mtime if Path('dist/Art_Instructions_Generator.exe').exists() else "Unknown") + """
+- Architecture: Directory-based distribution (not single-file)
 
 ## Support
 For technical support, contact your system administrator or IT department.
+
+## Important Notes
+- Do NOT delete or modify files in the `_internal/` folder
+- Keep all folders together - the application needs them to work properly
+- The application creates `outputs/` and `uploads/` folders automatically
 """
     
     with open(package_dir / 'README.txt', 'w', encoding='utf-8') as f:
@@ -241,7 +303,10 @@ For technical support, contact your system administrator or IT department.
     for item in package_dir.rglob('*'):
         if item.is_file():
             size_kb = item.stat().st_size / 1024
-            print(f"   📄 {item.relative_to(package_dir)} ({size_kb:.1f} KB)")
+            relative_path = item.relative_to(package_dir)
+            print(f"   📄 {relative_path} ({size_kb:.1f} KB)")
+    
+    return True
 
 def main():
     """Main build process"""
@@ -268,14 +333,17 @@ def main():
     # Build executable
     if build_executable():
         # Create distribution package
-        create_distribution_package()
-        
-        print("\n" + "=" * 70)
-        print("✅ BUILD COMPLETED SUCCESSFULLY!")
-        print("📦 Your executable is ready in: Art_Instructions_Package/")
-        print("📋 See README.txt in the package for setup instructions")
-        print("🚀 To test: Go to Art_Instructions_Package/ and run Art_Instructions_Generator.exe")
-        print("=" * 70)
+        if create_distribution_package():
+            print("\n" + "=" * 70)
+            print("✅ BUILD COMPLETED SUCCESSFULLY!")
+            print("📦 Your executable is ready in: Art_Instructions_Package/")
+            print("📋 See README.txt in the package for setup instructions")
+            print("🚀 To test: Go to Art_Instructions_Package/ and run Art_Instructions_Generator.exe")
+            print("💡 Note: This is now a DIRECTORY-based distribution (not single file)")
+            print("📁 Keep all files and folders together for the app to work properly")
+            print("=" * 70)
+        else:
+            print("\n❌ Failed to create distribution package.")
     else:
         print("\n❌ Build failed. Please check the error messages above.")
 

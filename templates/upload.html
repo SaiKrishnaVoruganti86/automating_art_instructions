@@ -2,137 +2,137 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Upload File - Art Instructions</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Art Instructions Generator</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+        }
+        input[type="file"], input[type="text"] {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+        input[type="file"]:focus, input[type="text"]:focus {
+            border-color: #007bff;
+            outline: none;
+        }
+        .btn {
+            background-color: #007bff;
+            color: white;
+            padding: 12px 30px;
+            border: none;
+            border-radius: 4px;
+            font-size: 16px;
+            cursor: pointer;
+            width: 100%;
+        }
+        .btn:hover {
+            background-color: #0056b3;
+        }
+        .help-text {
+            font-size: 14px;
+            color: #666;
+            margin-top: 5px;
+        }
+        .info-box {
+            background-color: #e7f3ff;
+            border: 1px solid #b3d9ff;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+        .info-box h3 {
+            margin-top: 0;
+            color: #0056b3;
+        }
+        .requirements {
+            background-color: #fff3cd;
+            border: 1px solid #ffeaa7;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+        .requirements h3 {
+            margin-top: 0;
+            color: #856404;
+        }
+        .requirements ul {
+            margin-bottom: 0;
+        }
+    </style>
 </head>
-<body class="bg-light">
-<div class="container mt-5">
-    <div class="card p-4 shadow">
-        <h2 class="mb-4">Upload File for Art Instructions</h2>
+<body>
+    <div class="container">
+        <h1>🎨 Art Instructions Generator</h1>
         
-        <!-- Error Message Display -->
-        {% if error_message %}
-        <div class="alert alert-danger alert-dismissible fade show" role="alert">
-            <i class="bi bi-exclamation-triangle-fill"></i>
-            <strong>Error:</strong> {{ error_message }}
-            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        <div class="info-box">
+            <h3>📋 How it works</h3>
+            <p>Upload your Excel/CSV file with sales order data to automatically generate art instruction PDFs with logo information, images, and comprehensive reports.</p>
         </div>
-        {% endif %}
-        
-        <!-- Success Message Display -->
-        {% if success_message %}
-        <div class="alert alert-success alert-dismissible fade show" role="alert">
-            <i class="bi bi-check-circle-fill"></i>
-            <strong>Success:</strong> {{ success_message }}
-            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+
+        <div class="requirements">
+            <h3>📄 Required Data Columns</h3>
+            <ul>
+                <li><strong>Document Number</strong> - Sales Order Number</li>
+                <li><strong>LOGO</strong> - Logo SKU</li>
+                <li><strong>OPERATIONAL CODE</strong> - Operation Code</li>
+            </ul>
+            <p><strong>Optional:</strong> VENDOR STYLE, COLOR, SIZE, SUBCATEGORY, Customer/Vendor Name, Due Date, DueDateStatus, Quantity, List of Operation Codes, LOGO POSITION, STITCH COUNT, NOTES, FILE NAME</p>
         </div>
-        {% endif %}
-        
-        <p class="text-muted mb-3">
-            <strong>Supported formats:</strong> Excel files (.xlsx, .xls) and CSV files (.csv)
-        </p>
-        
-        <form method="POST" enctype="multipart/form-data" id="uploadForm">
-            <!-- Sales Order Filter Field -->
-            <div class="mb-3">
-                <label for="salesOrder" class="form-label">Sales Order Number (Optional)</label>
-                <input class="form-control" type="text" name="sales_order" id="salesOrder" 
-                       placeholder="Enter exact sales order number to filter">
-                <div class="form-text">
-                    <i class="bi bi-info-circle"></i>
-                    Leave blank to process all sales orders, or enter the exact sales order number to generate art instructions for that specific order only.
-                </div>
+
+        <form method="POST" enctype="multipart/form-data">
+            <div class="form-group">
+                <label for="excel">📁 Select Excel/CSV File:</label>
+                <input type="file" id="excel" name="excel" accept=".xlsx,.xls,.csv" required>
+                <div class="help-text">Supported formats: .xlsx, .xls, .csv</div>
             </div>
-            
-            <!-- File Upload Field -->
-            <div class="mb-3">
-                <label for="dataFile" class="form-label">Select your data file:</label>
-                <input class="form-control" type="file" name="excel" id="dataFile" 
-                       accept=".xlsx,.xls,.csv" required>
-                <div class="form-text">
-                    Upload your Excel (.xlsx, .xls) or CSV (.csv) file containing art instruction data.
-                </div>
+
+            <div class="form-group">
+                <label for="sales_order">🔍 Sales Order Filter (Optional):</label>
+                <input type="text" id="sales_order" name="sales_order" placeholder="Enter specific sales order number (exact match)">
+                <div class="help-text">Leave empty to process all orders, or enter specific sales order number for exact match filtering</div>
             </div>
-            
-            <!-- Submit Button -->
-            <div class="d-grid gap-2">
-                <button class="btn btn-primary btn-lg" type="submit" id="submitBtn">
-                    <i class="bi bi-file-earmark-pdf"></i> Generate Art Instructions PDFs
-                </button>
-            </div>
+
+            <button type="submit" class="btn">🚀 Generate Art Instructions PDFs</button>
         </form>
-        
-        <!-- Processing Status (Hidden by default) -->
-        <div id="processingStatus" class="mt-4" style="display: none;">
-            <div class="alert alert-info">
-                <div class="d-flex align-items-center">
-                    <div class="spinner-border spinner-border-sm me-3" role="status">
-                        <span class="visually-hidden">Loading...</span>
-                    </div>
-                    <div>
-                        <strong>Processing your file...</strong><br>
-                        <small class="text-muted">Please wait while we generate your art instructions. This may take a few minutes.</small>
-                    </div>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Instructions and Requirements -->
-        <div class="mt-4">
-            <div class="row">
-                <div class="col-md-6">
-                    <h5><i class="bi bi-list-check"></i> Processing Criteria:</h5>
-                    <ul class="text-muted small">
-                        <li>Must have valid Logo SKU (not 0000, 0, or empty)</li>
-                        <li>Must have valid Operational Code (not 00, 0, or empty)</li>
-                        <li>Operational Code = 11 (always processed)</li>
-                        <li>OR Operational Code > 89 with specific List of Operation Codes</li>
-                        <li>Status must not be "Not Approved"</li>
-                    </ul>
-                </div>
-                <div class="col-md-6">
-                    <h5><i class="bi bi-gear"></i> File Requirements:</h5>
-                    <ul class="text-muted small">
-                        <li><strong>File size:</strong> Maximum recommended size is 50MB</li>
-                        <li><strong>Required columns:</strong> Document Number, LOGO, OPERATIONAL CODE</li>
-                        <li><strong>Optional columns:</strong> List of Operation Codes, DueDateStatus</li>
-                    </ul>
-                </div>
-            </div>
-        </div>
-        
-        <!-- How It Works Section -->
-        <div class="mt-4 p-3 bg-light rounded">
-            <h6><i class="bi bi-question-circle"></i> How it works:</h6>
-            <ol class="text-muted small mb-0">
-                <li><strong>Upload your file:</strong> Choose an Excel or CSV file containing sales order data</li>
-                <li><strong>Optional filtering:</strong> Enter the exact sales order number to process only that specific order</li>
-                <li><strong>Processing:</strong> The system will filter and validate data according to business rules</li>
-                <li><strong>PDF generation:</strong> Art instruction PDFs are created for qualifying orders</li>
-                <li><strong>Download:</strong> Receive a ZIP file containing all generated PDFs</li>
-            </ol>
+
+        <div class="info-box" style="margin-top: 30px;">
+            <h3>📊 What you'll get</h3>
+            <ul>
+                <li>Individual PDF art instructions for each valid logo SKU</li>
+                <li>Detailed Excel report with processing results</li>
+                <li>Overview Excel report with sales order summaries</li>
+                <li>Comprehensive PDF report with statistics</li>
+                <li>Real-time progress tracking during processing</li>
+            </ul>
         </div>
     </div>
-</div>
-
-<!-- Bootstrap JavaScript -->
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-
-<script>
-document.getElementById('uploadForm').addEventListener('submit', function(e) {
-    // Show processing status
-    const submitBtn = document.getElementById('submitBtn');
-    const processingStatus = document.getElementById('processingStatus');
-    
-    // Disable submit button and show processing status
-    submitBtn.disabled = true;
-    submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Processing...';
-    processingStatus.style.display = 'block';
-    
-    // Scroll to processing status
-    processingStatus.scrollIntoView({ behavior: 'smooth' });
-});
-</script>
 </body>
 </html>
