@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Processing Art Instructions</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 30px;
+        }
+        .progress-steps {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 30px;
+            position: relative;
+        }
+        .step {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background-color: #ddd;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            position: relative;
+            z-index: 2;
+        }
+        .step.active {
+            background-color: #007bff;
+        }
+        .step.completed {
+            background-color: #28a745;
+        }
+        .step-line {
+            position: absolute;
+            top: 25px;
+            left: 50px;
+            right: 50px;
+            height: 2px;
+            background-color: #ddd;
+            z-index: 1;
+        }
+        .step-labels {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 30px;
+            font-size: 12px;
+        }
+        .step-label {
+            width: 50px;
+            text-align: center;
+        }
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background-color: #e9ecef;
+            border-radius: 10px;
+            overflow: hidden;
+            margin-bottom: 20px;
+        }
+        .progress-fill {
+            height: 100%;
+            background-color: #007bff;
+            transition: width 0.3s ease;
+            border-radius: 10px;
+        }
+        .progress-text {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        .status-message {
+            font-size: 16px;
+            color: #666;
+            margin-bottom: 20px;
+        }
+        .current-step {
+            font-size: 14px;
+            color: #007bff;
+            margin-bottom: 20px;
+        }
+        .btn {
+            background-color: #28a745;
+            color: white;
+            padding: 12px 30px;
+            border: none;
+            border-radius: 4px;
+            font-size: 16px;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+            margin: 10px;
+        }
+        .btn:hover {
+            background-color: #218838;
+        }
+        .btn-secondary {
+            background-color: #6c757d;
+        }
+        .btn-secondary:hover {
+            background-color: #545b62;
+        }
+        .hidden {
+            display: none;
+        }
+        .info-box {
+            background-color: #e7f3ff;
+            border: 1px solid #b3d9ff;
+            padding: 15px;
+            border-radius: 4px;
+            margin-top: 20px;
+            text-align: left;
+        }
+        .info-box h4 {
+            margin-top: 0;
+            color: #0056b3;
+        }
+        .info-box ul {
+            margin-bottom: 0;
+        }
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #007bff;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>⚙️ Processing Art Instructions</h1>
+        
+        <div class="progress-steps">
+            <div class="step-line"></div>
+            <div class="step" id="step-1">1</div>
+            <div class="step" id="step-2">2</div>
+            <div class="step" id="step-3">3</div>
+            <div class="step" id="step-4">4</div>
+            <div class="step" id="step-5">5</div>
+        </div>
+        
+        <div class="step-labels">
+            <div class="step-label">Setup</div>
+            <div class="step-label">Validation</div>
+            <div class="step-label">PDF Generation</div>
+            <div class="step-label">Reports</div>
+            <div class="step-label">Complete</div>
+        </div>
+
+        <div class="progress-bar">
+            <div class="progress-fill" id="progress-fill" style="width: 0%"></div>
+        </div>
+        
+        <div class="progress-text" id="progress-text">0%</div>
+        <div class="status-message" id="status-message">Initializing...</div>
+        <div class="current-step" id="current-step">Starting process...</div>
+        
+        <div class="spinner" id="spinner"></div>
+        
+        <div id="completion-section" class="hidden">
+            <a href="/download/{{ session_id }}" class="btn">📥 Download Results</a>
+            <a href="/" class="btn btn-secondary">⬅️ Back to Upload</a>
+        </div>
+
+        <div class="info-box">
+            <h4>ℹ️ Please wait...</h4>
+            <p>The system is processing your file and generating art instructions. This process may take several minutes depending on the size of your data.</p>
+            <ul>
+                <li>• Do not close this browser tab</li>
+                <li>• Do not refresh the page</li>
+                <li>• The page will automatically update when complete</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        const sessionId = '{{ session_id }}';
+        
+        function updateProgress() {
+            fetch(`/api/progress/${sessionId}`)
+                .then(response => response.json())
+                .then(data => {
+                    // Update progress bar
+                    const progressFill = document.getElementById('progress-fill');
+                    const progressText = document.getElementById('progress-text');
+                    const statusMessage = document.getElementById('status-message');
+                    const currentStep = document.getElementById('current-step');
+                    const spinner = document.getElementById('spinner');
+                    const completionSection = document.getElementById('completion-section');
+                    
+                    progressFill.style.width = data.progress + '%';
+                    progressText.textContent = Math.round(data.progress) + '%';
+                    statusMessage.textContent = data.message;
+                    currentStep.textContent = data.current_step || 'Processing...';
+                    
+                    // Update step indicators
+                    const totalSteps = data.total_steps || 8;
+                    const currentStepNum = Math.ceil((data.progress / 100) * 5);
+                    
+                    for (let i = 1; i <= 5; i++) {
+                        const stepElement = document.getElementById(`step-${i}`);
+                        if (i < currentStepNum) {
+                            stepElement.className = 'step completed';
+                        } else if (i === currentStepNum) {
+                            stepElement.className = 'step active';
+                        } else {
+                            stepElement.className = 'step';
+                        }
+                    }
+                    
+                    // Handle completion
+                    if (data.status === 'completed') {
+                        spinner.style.display = 'none';
+                        completionSection.classList.remove('hidden');
+                        statusMessage.style.color = '#28a745';
+                        statusMessage.style.fontWeight = 'bold';
+                        return; // Stop polling
+                    } else if (data.status === 'error') {
+                        spinner.style.display = 'none';
+                        statusMessage.style.color = '#dc3545';
+                        statusMessage.style.fontWeight = 'bold';
+                        statusMessage.textContent = 'Error: ' + data.message;
+                        currentStep.textContent = 'Processing failed';
+                        return; // Stop polling
+                    }
+                    
+                    // Continue polling if still processing
+                    setTimeout(updateProgress, 1000);
+                })
+                .catch(error => {
+                    console.error('Error fetching progress:', error);
+                    setTimeout(updateProgress, 2000); // Retry after 2 seconds
+                });
+        }
+        
+        // Start polling when page loads
+        updateProgress();
+    </script>
+</body>
+</html>

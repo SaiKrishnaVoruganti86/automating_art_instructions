@@ -1,0 +1,7 @@
+Flask
+pandas
+fpdf2
+openpyxl
+Pillow
+Werkzeug
+xlrd
