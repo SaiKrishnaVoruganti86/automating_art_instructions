@@ -1262,12 +1262,23 @@ def process_file_with_progress(file_path, sales_order_filter, session_id):
         time.sleep(0.5)
         
         # Step 8: Create ZIP file
-        update_progress(session_id, 'processing', 95, 'Creating ZIP file with all documents...', 'Finalizing', 8)
         zip_path = os.path.join(OUTPUT_FOLDER, ZIP_NAME)
         with zipfile.ZipFile(zip_path, "w") as zipf:
             for fname in os.listdir(OUTPUT_FOLDER):
                 if fname.endswith((".pdf", ".xlsx", ".txt", ".json")) and fname != ZIP_NAME:
-                    zipf.write(os.path.join(OUTPUT_FOLDER, fname), fname)
+                    # Check if it's a PDF with SO in the name
+                    if fname.startswith("SO_") and "_AI_" in fname and fname.endswith(".pdf"):
+                        # Extract SO number
+                        try:
+                            so_part = fname.split("_AI_")[0]  # e.g., SO_12345
+                            so_number = so_part.replace("SO_", "")
+                            arcname = os.path.join(so_number, fname)  # e.g., 12345/SO_12345_AI_0012.pdf
+                        except:
+                            arcname = fname
+                    else:
+                        arcname = fname  # non-PDF files go to root
+            
+                    zipf.write(os.path.join(OUTPUT_FOLDER, fname), arcname)
         
         # Completion
         success_msg = f"Successfully generated {pdf_count} art instruction PDF(s) with execution report"
