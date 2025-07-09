@@ -22,7 +22,7 @@ UPLOAD_FOLDER = os.path.join(BASE_DIR, "..", "uploads")
 OUTPUT_FOLDER = os.path.join(BASE_DIR, "..", "outputs")
 LOGO_DB_FOLDER = os.path.join(BASE_DIR, "..", "logo_database")
 LOGO_IMAGES_FOLDER = os.path.join(BASE_DIR, "..", "logo_images")
-ZIP_NAME = "art_instructions_pdfs.zip"
+ZIP_NAME = f"art_instructions_pdfs_{datetime.now().strftime('%m_%d_%Y_%H_%M_%S')}.zip"
 LOGO_DB_FILE = "ArtDBSample.xlsx"  # Logo database file
 STATIC_IMAGE_PATH = os.path.join(BASE_DIR, "static", "jauniforms.png")
 
