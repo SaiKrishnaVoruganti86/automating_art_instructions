@@ -939,7 +939,7 @@ def process_file_with_progress(file_path, sales_order_filter, session_id):
                     pdf.set_auto_page_break(auto=True, margin=0.8)
                     pdf.set_font("Arial", "", 8.5)
 
-                    due_date = format_date_consistently(group["Due Date"].iloc[0])
+                    due_date = datetime.now().strftime("%m/%d/%Y")
 
                     full_width = 190
                     usable_width = full_width - (2 * 0.8)
