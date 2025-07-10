@@ -30,6 +30,12 @@ class ReportGenerator:
             # Check if error message is "Status: Not Approved"
             elif error_msg.strip() == "Status: Not Approved":
                 processed_record['Execution Status'] = 'NOT APPROVED'
+            # Check if error message is "Status: Not Approved (filtered out)"
+            elif error_msg.strip() == "Status: Not Approved (filtered out)":
+                processed_record['Execution Status'] = 'NOT APPROVED (FILTERED)'
+            # Check if error message is "Status: Approved (filtered out)"
+            elif error_msg.strip() == "Status: Approved (filtered out)":
+                processed_record['Execution Status'] = 'APPROVED (FILTERED)'
             
             processed_data.append(processed_record)
         
@@ -120,7 +126,7 @@ class ReportGenerator:
         
         return f"{generated_pdfs} out of {total_unique_logos}"
     
-    def generate_all_reports(self, report_data, output_folder, timestamp, sales_order_filter=None):
+    def generate_all_reports(self, report_data, output_folder, timestamp, sales_order_filter=None, approval_filter="approved_only", filter_info=""):
         """
         Generate all report formats (Excel, PDF)
         
@@ -129,6 +135,8 @@ class ReportGenerator:
             output_folder (str): Path to output folder
             timestamp (str): Timestamp for file naming
             sales_order_filter (str): Sales order filter used (if any)
+            approval_filter (str): Approval status filter used
+            filter_info (str): Combined filter info for file naming
         """
         print(f"Generating comprehensive reports with {len(report_data)} records...")
         
@@ -136,13 +144,13 @@ class ReportGenerator:
         processed_data = self.preprocess_report_data(report_data)
         
         # Generate each report format
-        self.generate_detailed_excel_report(processed_data, output_folder, timestamp, sales_order_filter)
-        self.generate_overview_excel_report(processed_data, output_folder, timestamp, sales_order_filter)
-        self.generate_pdf_report(processed_data, output_folder, timestamp, sales_order_filter)
+        self.generate_detailed_excel_report(processed_data, output_folder, timestamp, filter_info)
+        self.generate_overview_excel_report(processed_data, output_folder, timestamp, filter_info)
+        self.generate_pdf_report(processed_data, output_folder, timestamp, sales_order_filter, approval_filter, filter_info)
         
         print("All reports generated successfully!")
     
-    def generate_detailed_excel_report(self, report_data, output_folder, timestamp, sales_order_filter=None):
+    def generate_detailed_excel_report(self, report_data, output_folder, timestamp, filter_info=""):
         """
         Generate detailed Excel report with specified column order and fields
         Preserves the original order from the uploaded file
@@ -192,8 +200,7 @@ class ReportGenerator:
             # NO SORTING - keep original order from uploaded file
             
             # Generate filename
-            filter_suffix = f"_SO_{sales_order_filter}" if sales_order_filter else ""
-            filename = f"Art_Instructions_Detailed_Report_{timestamp}{filter_suffix}.xlsx"
+            filename = f"Art_Instructions_Detailed_Report_{timestamp}{filter_info}.xlsx"
             filepath = os.path.join(output_folder, filename)
             
             # Save to Excel with formatting
@@ -220,6 +227,7 @@ class ReportGenerator:
                 failed_fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
                 no_logo_fill = PatternFill(start_color="D3D3D3", end_color="D3D3D3", fill_type="solid")  # Grey for NO LOGO
                 not_approved_fill = PatternFill(start_color="FFE4B5", end_color="FFE4B5", fill_type="solid")  # Light orange for NOT APPROVED
+                filtered_fill = PatternFill(start_color="E6E6FA", end_color="E6E6FA", fill_type="solid")  # Lavender for filtered items
                 
                 execution_status_col = None
                 for idx, cell in enumerate(worksheet[1]):
@@ -238,6 +246,8 @@ class ReportGenerator:
                             status_cell.fill = no_logo_fill
                         elif status_cell.value == 'NOT APPROVED':
                             status_cell.fill = not_approved_fill
+                        elif status_cell.value in ['NOT APPROVED (FILTERED)', 'APPROVED (FILTERED)']:
+                            status_cell.fill = filtered_fill
                 
                 # Auto-adjust column widths
                 for column in worksheet.columns:
@@ -257,7 +267,7 @@ class ReportGenerator:
         except Exception as e:
             print(f"Error generating detailed Excel report: {e}")
     
-    def generate_overview_excel_report(self, report_data, output_folder, timestamp, sales_order_filter=None):
+    def generate_overview_excel_report(self, report_data, output_folder, timestamp, filter_info=""):
         """
         Generate overview Excel report with Document Number, Completion Status, and PDF Generation Status
         Preserves the original order from the uploaded file
@@ -272,8 +282,7 @@ class ReportGenerator:
             overview_df = pd.DataFrame(overview_data)
             
             # Generate filename
-            filter_suffix = f"_SO_{sales_order_filter}" if sales_order_filter else ""
-            filename = f"Art_Instructions_Overview_Report_{timestamp}{filter_suffix}.xlsx"
+            filename = f"Art_Instructions_Overview_Report_{timestamp}{filter_info}.xlsx"
             filepath = os.path.join(output_folder, filename)
             
             # Save to Excel with formatting
@@ -363,17 +372,20 @@ class ReportGenerator:
             so_no_logo = sum(1 for item in items if item.get('Execution Status') == 'NO LOGO')
             so_failed = sum(1 for item in items if item.get('Execution Status') == 'FAILED')
             so_not_approved = sum(1 for item in items if item.get('Execution Status') == 'NOT APPROVED')
+            so_filtered = sum(1 for item in items if item.get('Execution Status') in ['NOT APPROVED (FILTERED)', 'APPROVED (FILTERED)'])
             
             # Calculate success rate (include only NO LOGO as success, NOT APPROVED is considered failure)
             so_success_rate = ((so_success + so_no_logo) / so_total * 100) if so_total > 0 else 0
             
-            # Determine completion status with special handling for NOT APPROVED
+            # Determine completion status with special handling for NOT APPROVED and filtered items
             # NOT APPROVED: If ALL items are NOT APPROVED (no SUCCESS, FAILED, or NO LOGO items)
             # FULLY SUCCESS: All items are either SUCCESS or NO LOGO (100% success rate)
             # TOTAL FAILED: No items are SUCCESS or NO LOGO (0% success rate) 
             # PARTIAL SUCCESS: Mix of success/failure (1-99% success rate)
             if so_not_approved == so_total:  # All items are NOT APPROVED
                 completion_status = "NOT APPROVED"
+            elif so_filtered == so_total:  # All items are filtered out
+                completion_status = "FILTERED OUT"
             elif so_success_rate == 100:
                 completion_status = "FULLY SUCCESS"
             elif so_success_rate == 0:
@@ -393,7 +405,7 @@ class ReportGenerator:
         # NO SORTING - preserve original order from OrderedDict
         return overview_data
     
-    def generate_pdf_report(self, report_data, output_folder, timestamp, sales_order_filter=None):
+    def generate_pdf_report(self, report_data, output_folder, timestamp, sales_order_filter=None, approval_filter="approved_only", filter_info=""):
         """
         Generate PDF report organized by sales order with item-level details
         Preserves the original order from the uploaded file
@@ -412,8 +424,7 @@ class ReportGenerator:
                 sales_orders[so_number].append(record)
             
             # Generate filename
-            filter_suffix = f"_SO_{sales_order_filter}" if sales_order_filter else ""
-            filename = f"Art_Instructions_Report_{timestamp}{filter_suffix}.pdf"
+            filename = f"Art_Instructions_Report_{timestamp}{filter_info}.pdf"
             filepath = os.path.join(output_folder, filename)
             
             # Create PDF
@@ -432,6 +443,14 @@ class ReportGenerator:
             if sales_order_filter:
                 pdf.cell(0, 8, f'Filtered by Sales Order: {sales_order_filter}', ln=True, align='C')
             
+            # Add approval filter information
+            if approval_filter == "approved_only":
+                pdf.cell(0, 8, 'Filter: Approved Orders Only', ln=True, align='C')
+            elif approval_filter == "not_approved_only":
+                pdf.cell(0, 8, 'Filter: Not Approved Orders Only', ln=True, align='C')
+            elif approval_filter == "both":
+                pdf.cell(0, 8, 'Filter: Both Approved and Not Approved Orders', ln=True, align='C')
+            
             pdf.ln(10)
             
             # Summary statistics (removed Total Sales Orders)
@@ -440,6 +459,7 @@ class ReportGenerator:
             failed_count = sum(1 for record in report_data if record.get('Execution Status') == 'FAILED')
             no_logo_count = sum(1 for record in report_data if record.get('Execution Status') == 'NO LOGO')
             not_approved_count = sum(1 for record in report_data if record.get('Execution Status') == 'NOT APPROVED')
+            filtered_count = sum(1 for record in report_data if record.get('Execution Status') in ['NOT APPROVED (FILTERED)', 'APPROVED (FILTERED)'])
             # Include only NO LOGO as success for success rate calculation (NOT APPROVED is considered failure)
             success_rate = ((success_count + no_logo_count) / total_records * 100) if total_records > 0 else 0
             
@@ -453,6 +473,8 @@ class ReportGenerator:
             pdf.cell(0, 6, f'Failed: {failed_count}', ln=True)
             pdf.cell(0, 6, f'NO LOGO (Invalid Logo SKU): {no_logo_count}', ln=True)
             pdf.cell(0, 6, f'NOT APPROVED: {not_approved_count}', ln=True)
+            if filtered_count > 0:
+                pdf.cell(0, 6, f'FILTERED OUT: {filtered_count}', ln=True)
             pdf.cell(0, 6, f'Success Rate: {success_rate:.1f}% (includes NO LOGO as success, NOT APPROVED as failure)', ln=True)
             
             pdf.ln(10)
@@ -462,6 +484,7 @@ class ReportGenerator:
             so_partial_success = 0
             so_not_approved = 0
             so_total_failed = 0
+            so_filtered_out = 0
             
             for so_number, items in sales_orders.items():
                 so_total = len(items)
@@ -469,6 +492,7 @@ class ReportGenerator:
                 so_no_logo = sum(1 for item in items if item.get('Execution Status') == 'NO LOGO')
                 so_failed = sum(1 for item in items if item.get('Execution Status') == 'FAILED')
                 so_not_approved_items = sum(1 for item in items if item.get('Execution Status') == 'NOT APPROVED')
+                so_filtered_items = sum(1 for item in items if item.get('Execution Status') in ['NOT APPROVED (FILTERED)', 'APPROVED (FILTERED)'])
                 
                 # Calculate success rate for this SO
                 so_success_rate = ((so_success + so_no_logo) / so_total * 100) if so_total > 0 else 0
@@ -476,6 +500,8 @@ class ReportGenerator:
                 # Categorize this sales order
                 if so_not_approved_items == so_total:  # All items are NOT APPROVED
                     so_not_approved += 1
+                elif so_filtered_items == so_total:  # All items are filtered out
+                    so_filtered_out += 1
                 elif so_success_rate == 100:
                     so_fully_success += 1
                 elif so_success_rate == 0:
@@ -496,6 +522,8 @@ class ReportGenerator:
             pdf.cell(0, 6, f'No of Sales Orders Partial Success: {so_partial_success}', ln=True)
             pdf.cell(0, 6, f'No of Sales Orders Total Failed: {so_total_failed}', ln=True)
             pdf.cell(0, 6, f'No of Sales Orders Not Approved: {so_not_approved}', ln=True)
+            if so_filtered_out > 0:
+                pdf.cell(0, 6, f'No of Sales Orders Filtered Out: {so_filtered_out}', ln=True)
             pdf.cell(0, 6, f'Sales Orders Success Rate: {so_success_rate:.1f}% ({so_fully_success} out of {len(sales_orders)})', ln=True)
             
             pdf.ln(10)
@@ -521,13 +549,14 @@ class ReportGenerator:
                 so_failed = sum(1 for item in items if item.get('Execution Status') == 'FAILED')
                 so_no_logo = sum(1 for item in items if item.get('Execution Status') == 'NO LOGO')
                 so_not_approved = sum(1 for item in items if item.get('Execution Status') == 'NOT APPROVED')
+                so_filtered = sum(1 for item in items if item.get('Execution Status') in ['NOT APPROVED (FILTERED)', 'APPROVED (FILTERED)'])
                 # Include only NO LOGO as success for success rate calculation (NOT APPROVED is considered failure)
                 so_success_rate = ((so_success + so_no_logo) / so_total * 100) if so_total > 0 else 0
                 
                 # Calculate PDF generation status
                 pdf_generation_status = self.calculate_pdf_generation_status(items)
                 
-                # Determine completion status with special handling for NOT APPROVED
+                # Determine completion status with special handling for NOT APPROVED and filtered items
                 # NOT APPROVED: If ALL items are NOT APPROVED (no SUCCESS, FAILED, or NO LOGO items)
                 # FULLY SUCCESS: All items are either SUCCESS or NO LOGO (100% success rate)
                 # TOTAL FAILED: No items are SUCCESS or NO LOGO (0% success rate) 
@@ -535,6 +564,9 @@ class ReportGenerator:
                 if so_not_approved == so_total:  # All items are NOT APPROVED
                     completion_status = "NOT APPROVED"
                     status_color = (255, 165, 0)  # Orange
+                elif so_filtered == so_total:  # All items are filtered out
+                    completion_status = "FILTERED OUT"
+                    status_color = (128, 128, 128)  # Gray
                 elif so_success_rate == 100:
                     completion_status = "FULLY SUCCESS"
                     status_color = (0, 128, 0)  # Green
@@ -547,6 +579,8 @@ class ReportGenerator:
                 
                 pdf.set_font('Arial', '', 10)
                 pdf.cell(0, 5, f'Items: {so_total} | Success: {so_success} | Failed: {so_failed} | NO LOGO: {so_no_logo} | NOT APPROVED: {so_not_approved}', ln=True)
+                if so_filtered > 0:
+                    pdf.cell(0, 5, f'FILTERED: {so_filtered}', ln=True)
                 pdf.cell(0, 5, f'Success Rate: {so_success_rate:.1f}% (includes NO LOGO as success, NOT APPROVED as failure)', ln=True)
                 pdf.cell(0, 5, f'PDF Generation Status: {pdf_generation_status}', ln=True)
                 
@@ -662,10 +696,12 @@ class ReportGenerator:
             "total_errors": 0,
             "total_no_logo": 0,
             "total_not_approved": 0,
+            "total_filtered": 0,
             "error_types": defaultdict(int),
             "errors_by_sales_order": defaultdict(list),
             "no_logo_by_sales_order": defaultdict(list),
             "not_approved_by_sales_order": defaultdict(list),
+            "filtered_by_sales_order": defaultdict(list),
             "most_common_errors": []
         }
         
@@ -690,11 +726,18 @@ class ReportGenerator:
                     "error": record.get('Error Message', 'Invalid Logo SKU'),
                     "style": record.get('VENDOR STYLE', 'N/A')
                 })
-            elif status == 'Not Approved':
+            elif status == 'NOT APPROVED':
                 error_stats["total_not_approved"] += 1
                 error_stats["not_approved_by_sales_order"][so_number].append({
                     "logo": record.get('LOGO', 'N/A'),
                     "error": record.get('Error Message', 'Status: Not Approved'),
+                    "style": record.get('VENDOR STYLE', 'N/A')
+                })
+            elif status in ['NOT APPROVED (FILTERED)', 'APPROVED (FILTERED)']:
+                error_stats["total_filtered"] += 1
+                error_stats["filtered_by_sales_order"][so_number].append({
+                    "logo": record.get('LOGO', 'N/A'),
+                    "error": record.get('Error Message', 'Filtered out'),
                     "style": record.get('VENDOR STYLE', 'N/A')
                 })
         

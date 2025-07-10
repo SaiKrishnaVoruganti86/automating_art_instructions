@@ -32,14 +32,14 @@
             font-weight: bold;
             color: #555;
         }
-        input[type="file"], input[type="text"] {
+        input[type="file"], input[type="text"], select {
             width: 100%;
             padding: 10px;
             border: 2px solid #ddd;
             border-radius: 4px;
             font-size: 16px;
         }
-        input[type="file"]:focus, input[type="text"]:focus {
+        input[type="file"]:focus, input[type="text"]:focus, select:focus {
             border-color: #007bff;
             outline: none;
         }
@@ -118,6 +118,16 @@
                 <label for="sales_order">🔍 Sales Order Filter (Optional):</label>
                 <input type="text" id="sales_order" name="sales_order" placeholder="Enter specific sales order number (exact match)">
                 <div class="help-text">Leave empty to process all orders, or enter specific sales order number for exact match filtering</div>
+            </div>
+
+            <div class="form-group">
+                <label for="approval_filter">✅ Approval Status Filter:</label>
+                <select id="approval_filter" name="approval_filter">
+                    <option value="approved_only">Process Approved Orders Only (Default)</option>
+                    <option value="not_approved_only">Process Not Approved Orders Only</option>
+                    <option value="both">Process Both Approved and Not Approved Orders</option>
+                </select>
+                <div class="help-text">Choose whether to process approved orders, not approved orders, or both</div>
             </div>
 
             <button type="submit" class="btn">🚀 Generate Art Instructions PDFs</button>
