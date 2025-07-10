@@ -677,7 +677,7 @@ def filter_by_sales_order(df, sales_order_filter):
     
     return filtered_df
 
-def validate_row_for_processing(row, report_data):
+def validate_row_for_processing(row, report_data, approval_filter="approved_only"):  # MODIFIED LINE
     """
     Validate a single row for processing and return validation result
     Returns: (is_valid, error_message)
@@ -691,7 +691,7 @@ def validate_row_for_processing(row, report_data):
         'LOGO': logo_sku,
         'VENDOR STYLE': safe_get(row.get("VENDOR STYLE", "")),
         'COLOR': safe_get(row.get("COLOR", "")),
-        'SIZE': safe_get(row.get("SIZE", "")),  # Added SIZE field
+        'SIZE': safe_get(row.get("SIZE", "")),
         'SUBCATEGORY': safe_get(row.get("SUBCATEGORY", "")),
         'Quantity': safe_get(row.get("Quantity", "")),
         'Customer/Vendor Name': safe_get(row.get("Customer/Vendor Name", "")),
@@ -705,13 +705,26 @@ def validate_row_for_processing(row, report_data):
         'FILE NAME': safe_get(row.get("FILE NAME", ""))
     }
     
-    # Validation 1: Check DueDateStatus for "Not Approved"
+    # Validation 1: Check DueDateStatus based on approval filter - MODIFIED SECTION
     due_date_status = safe_get(row.get("DueDateStatus", "")).strip().upper()
-    if due_date_status == "NOT APPROVED":
-        row_data['Execution Status'] = 'FAILED'
-        row_data['Error Message'] = 'Status: Not Approved'
-        report_data.append(row_data)
-        return False, "Status: Not Approved"
+    
+    if approval_filter == "approved_only":
+        # Only process approved orders (skip "Not Approved")
+        if due_date_status == "NOT APPROVED":
+            row_data['Execution Status'] = 'FAILED'
+            row_data['Error Message'] = 'Status: Not Approved (filtered out)'
+            report_data.append(row_data)
+            return False, "Status: Not Approved (filtered out)"
+    elif approval_filter == "not_approved_only":
+        # Only process not approved orders (skip anything that's not "Not Approved")
+        if due_date_status != "NOT APPROVED":
+            row_data['Execution Status'] = 'FAILED'
+            row_data['Error Message'] = 'Status: Approved (filtered out)'
+            report_data.append(row_data)
+            return False, "Status: Approved (filtered out)"
+    # For approval_filter == "both", we don't filter based on approval status
+    
+    # Rest of the validation logic remains the same...
     
     # Validation 2: Check Logo SKU validity
     logo_sku_str = str(logo_sku).strip()
@@ -839,7 +852,7 @@ def validate_row_for_processing(row, report_data):
         report_data.append(row_data)
         return False, f'Operational Code {operational_code} is not 11 and not > 89'
 
-def process_file_with_progress(file_path, sales_order_filter, session_id):
+def process_file_with_progress(file_path, sales_order_filter, session_id, approval_filter="approved_only"):
     """
     Process the file with progress updates - this replaces your main processing logic
     """
@@ -895,7 +908,7 @@ def process_file_with_progress(file_path, sales_order_filter, session_id):
         
         # Process each row for validation
         for index, row in df.iterrows():
-            is_valid, error_msg = validate_row_for_processing(row, report_data)
+            is_valid, error_msg = validate_row_for_processing(row, report_data, approval_filter)
             if not is_valid:
                 print(f"Row {index + 1}: {error_msg}")
         
@@ -914,7 +927,7 @@ def process_file_with_progress(file_path, sales_order_filter, session_id):
         final_valid_rows = []
         for index, row in valid_df.iterrows():
             temp_report = []
-            is_valid, _ = validate_row_for_processing(row, temp_report)
+            is_valid, _ = validate_row_for_processing(row, temp_report, approval_filter)
             if is_valid:
                 final_valid_rows.append(row)
         
@@ -1250,11 +1263,25 @@ def process_file_with_progress(file_path, sales_order_filter, session_id):
         
         try:
             report_gen = ReportGenerator()
+            
+            # Create filter info string for reports
+            filter_info = ""
+            if sales_order_filter:
+                filter_info += f"_SO_{sales_order_filter}"
+            if approval_filter != "approved_only":
+                approval_suffix = {
+                    "not_approved_only": "_NotApproved",
+                    "both": "_AllStatus"
+                }.get(approval_filter, "")
+                filter_info += approval_suffix
+            
             report_gen.generate_all_reports(
                 report_data=report_data,
                 output_folder=OUTPUT_FOLDER,
                 timestamp=timestamp,
-                sales_order_filter=sales_order_filter
+                sales_order_filter=sales_order_filter,
+                approval_filter=approval_filter,
+                filter_info=filter_info
             )
         except Exception as e:
             print(f"Error generating reports: {e}")
@@ -1285,6 +1312,14 @@ def process_file_with_progress(file_path, sales_order_filter, session_id):
         if sales_order_filter:
             success_msg += f" for Sales Order '{sales_order_filter}'"
         
+        # Add approval filter info to success message
+        if approval_filter == "approved_only":
+            success_msg += " (Approved orders only)"
+        elif approval_filter == "not_approved_only":
+            success_msg += " (Not approved orders only)"
+        elif approval_filter == "both":
+            success_msg += " (Both approved and not approved orders)"
+        
         update_progress(session_id, 'completed', 100, success_msg, 'Complete', 8)
         
         return {'success': True, 'message': success_msg, 'pdf_count': pdf_count}
@@ -1301,6 +1336,7 @@ def upload_file():
     if request.method == "POST":
         file = request.files["excel"]
         sales_order_filter = request.form.get("sales_order", "").strip()
+        approval_filter = request.form.get("approval_filter", "approved_only").strip()  # NEW LINE
         
         if file.filename == "":
             return redirect(request.url)
@@ -1316,7 +1352,7 @@ def upload_file():
         
         # Start processing in background thread
         def background_process():
-            process_file_with_progress(file_path, sales_order_filter, session_id)
+            process_file_with_progress(file_path, sales_order_filter, session_id, approval_filter)  # MODIFIED LINE
         
         thread = threading.Thread(target=background_process)
         thread.daemon = True
