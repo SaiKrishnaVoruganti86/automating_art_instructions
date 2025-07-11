@@ -252,6 +252,166 @@ def render_items_section(pdf, vendor_styles, total_width):
         pdf.cell(value_width, 5, line.strip(", "), border=1)
         pdf.ln()
 
+def calculate_text_height(pdf, text, available_width, line_height=5):
+    """
+    Calculate the required height for text that may need to wrap
+    """
+    if not text or text.strip() == "":
+        return line_height
+    
+    text_str = str(text).strip()
+    available_width = available_width - 4  # Account for padding
+    
+    # If text fits in one line
+    if pdf.get_string_width(text_str) <= available_width:
+        return line_height
+    
+    # Calculate number of lines needed
+    words = text_str.split()
+    lines = []
+    current_line = ""
+    
+    for word in words:
+        test_line = current_line + (" " if current_line else "") + word
+        if pdf.get_string_width(test_line) <= available_width:
+            current_line = test_line
+        else:
+            if current_line:
+                lines.append(current_line)
+                current_line = word
+            else:
+                # Single word is too long - break it by characters
+                if pdf.get_string_width(word) > available_width:
+                    # Calculate how many lines this long word will need
+                    chars_so_far = ""
+                    for char in word:
+                        test_chars = chars_so_far + char
+                        if pdf.get_string_width(test_chars) > available_width:
+                            if chars_so_far:
+                                lines.append(chars_so_far)
+                                chars_so_far = char
+                            else:
+                                lines.append(char)  # Single character that's too wide
+                                chars_so_far = ""
+                        else:
+                            chars_so_far = test_chars
+                    if chars_so_far:
+                        current_line = chars_so_far
+                else:
+                    current_line = word
+    
+    if current_line:
+        lines.append(current_line)
+    
+    # Return height needed with minimum of original line_height
+    return max(len(lines) * line_height, line_height)
+
+def add_multiline_text_to_cell(pdf, text, x, y, width, height, border=1, align="L", fill=False):
+    """
+    Add text to a cell with proper line wrapping and boundary control
+    """
+    # Draw background fill first if needed
+    if fill:
+        pdf.set_fill_color(255, 255, 0)  # Yellow color
+        pdf.rect(x, y, width, height, style='F')
+        pdf.set_fill_color(255, 255, 255)  # Reset to white background
+    
+    # Draw the cell border
+    if border:
+        pdf.rect(x, y, width, height)
+    
+    if not text or text.strip() == "":
+        return
+    
+    text_str = str(text).strip()
+    # More conservative padding to ensure text stays within borders
+    padding = 1
+    available_width = width - (2 * padding)
+    line_height = 4  # Slightly smaller line height for better fit
+    
+    # Calculate maximum lines that can fit
+    max_lines = max(1, int((height - 2) / line_height))
+    
+    # If text fits in one line
+    if pdf.get_string_width(text_str) <= available_width:
+        if align == "C":
+            text_x = x + (width - pdf.get_string_width(text_str)) / 2
+        elif align == "L":
+            text_x = x + padding
+        else:  # Right align
+            text_x = x + width - pdf.get_string_width(text_str) - padding
+        
+        text_y = y + (height - line_height) / 2
+        pdf.set_xy(text_x, text_y)
+        pdf.cell(pdf.get_string_width(text_str), line_height, text_str, 0, 0, 'L')
+        return
+    
+    # For long text, break it properly
+    words = text_str.split()
+    lines = []
+    current_line = ""
+    
+    for word in words:
+        test_line = current_line + (" " if current_line else "") + word
+        if pdf.get_string_width(test_line) <= available_width:
+            current_line = test_line
+        else:
+            if current_line:
+                lines.append(current_line)
+                current_line = word
+            else:
+                # Single word is too long - break it by characters
+                remaining_word = word
+                while remaining_word and len(lines) < max_lines:
+                    char_line = ""
+                    for char in remaining_word:
+                        test_char_line = char_line + char
+                        if pdf.get_string_width(test_char_line) <= available_width:
+                            char_line = test_char_line
+                        else:
+                            break
+                    
+                    if char_line:
+                        lines.append(char_line)
+                        remaining_word = remaining_word[len(char_line):]
+                    else:
+                        # Even single character doesn't fit - just add it
+                        lines.append(remaining_word[0])
+                        remaining_word = remaining_word[1:]
+                
+                current_line = remaining_word if len(lines) < max_lines else ""
+    
+    if current_line and len(lines) < max_lines:
+        lines.append(current_line)
+    
+    # Limit to max lines that fit in cell height
+    lines = lines[:max_lines]
+    
+    # Calculate starting Y position to center the text block vertically
+    total_text_height = len(lines) * line_height
+    start_y = y + max(1, (height - total_text_height) / 2)
+    
+    # Add lines to PDF with strict boundary control
+    for i, line in enumerate(lines):
+        line_y = start_y + (i * line_height)
+        
+        # Make sure we don't draw outside the cell
+        if line_y + line_height > y + height:
+            break
+        
+        if align == "C":
+            line_x = x + (width - pdf.get_string_width(line)) / 2
+        elif align == "L":
+            line_x = x + padding
+        else:  # Right align
+            line_x = x + width - pdf.get_string_width(line) - padding
+        
+        # Ensure text doesn't go outside cell boundaries
+        line_x = max(x + padding, min(line_x, x + width - pdf.get_string_width(line) - padding))
+        
+        pdf.set_xy(line_x, line_y)
+        pdf.cell(pdf.get_string_width(line), line_height, line, 0, 0, 'L')
+
 def add_logo_color_table(pdf, logo_colors=None):
     """Enhanced logo color table with actual colors from database and truncation (using consistent width)"""
     pdf.ln(5)
@@ -1183,39 +1343,71 @@ def process_file_with_progress(file_path, sales_order_filter, session_id, approv
                         stitch_count = safe_get(group["STITCH COUNT"].iloc[0])
                     
                     # Enhanced logo section (simplified for space)
-                    pdf.set_font("Arial", "B", 8.5)
-                    pdf.cell(logo_sku_label_width, 5, "LOGO SKU:", border=1, align="C")
+                    # Calculate heights needed for each field
                     pdf.set_font("Arial", "", 8.5)
-                    pdf.cell(logo_sku_value_width, 5, logo_display, border=1, align="C")
+                    logo_sku_height = calculate_text_height(pdf, logo_display, logo_sku_value_width - 2)
+                    logo_pos_height = calculate_text_height(pdf, logo_pos, logo_pos_value_width - 2)
+                    stitch_height = calculate_text_height(pdf, stitch_count, stitch_value_width - 2)
+
+                    # Use the maximum height needed
+                    row_height = max(logo_sku_height, logo_pos_height, stitch_height, 5)
+
+                    # Store current position
+                    current_x = pdf.get_x()
+                    current_y = pdf.get_y()
+
+                    # Draw LOGO SKU section
                     pdf.set_font("Arial", "B", 8.5)
-                    pdf.cell(logo_pos_label_width, 5, "LOGO POSITION:", border=1, align="C")
+                    add_multiline_text_to_cell(pdf, "LOGO SKU:", current_x, current_y, logo_sku_label_width, row_height, border=1, align="C")
+
+                    pdf.set_font("Arial", "", 8.5)
+                    add_multiline_text_to_cell(pdf, logo_display, current_x + logo_sku_label_width, current_y, logo_sku_value_width, row_height, border=1, align="C")
+
+                    # Draw LOGO POSITION section
+                    pdf.set_font("Arial", "B", 8.5)
+                    add_multiline_text_to_cell(pdf, "LOGO POSITION:", current_x + logo_sku_label_width + logo_sku_value_width, current_y, logo_pos_label_width, row_height, border=1, align="C")
+
                     pdf.set_font("Arial", "", 8.5)
                     # Check if logo position needs yellow highlighting
                     if logo_pos.strip().upper() != "LEFT CHEST":
-                        # Set yellow background color for highlighting (like a marker)
-                        pdf.set_fill_color(255, 255, 0)  # Yellow color
-                        pdf.cell(logo_pos_value_width, 5, logo_pos, border=1, fill=True)
-                        pdf.set_fill_color(255, 255, 255)  # Reset to white background
+                        add_multiline_text_to_cell(pdf, logo_pos, current_x + logo_sku_label_width + logo_sku_value_width + logo_pos_label_width, current_y, logo_pos_value_width, row_height, border=1, align="L", fill=True)
                     else:
-                        pdf.cell(logo_pos_value_width, 5, logo_pos, border=1)
-                    pdf.set_font("Arial", "B", 8.5)
-                    pdf.cell(stitch_label_width, 5, "STITCH COUNT:", border=1, align="C")
-                    pdf.set_font("Arial", "", 8.5)
-                    pdf.cell(stitch_value_width, 5, stitch_count, border=1, align="C")
-                    pdf.ln(7)
+                        add_multiline_text_to_cell(pdf, logo_pos, current_x + logo_sku_label_width + logo_sku_value_width + logo_pos_label_width, current_y, logo_pos_value_width, row_height, border=1, align="L")
 
-                    # Enhanced notes section
+                    # Draw STITCH COUNT section
+                    pdf.set_font("Arial", "B", 8.5)
+                    add_multiline_text_to_cell(pdf, "STITCH COUNT:", current_x + logo_sku_label_width + logo_sku_value_width + logo_pos_label_width + logo_pos_value_width, current_y, stitch_label_width, row_height, border=1, align="C")
+
+                    pdf.set_font("Arial", "", 8.5)
+                    add_multiline_text_to_cell(pdf, stitch_count, current_x + logo_sku_label_width + logo_sku_value_width + logo_pos_label_width + logo_pos_value_width + stitch_label_width, current_y, stitch_value_width, row_height, border=1, align="C")
+
+                    # Move to next section
+                    pdf.set_xy(current_x, current_y + row_height + 2)
+
+                    # Enhanced notes section with multi-line support
                     notes = ""
                     if logo_info and logo_info['notes']:
                         notes = logo_info['notes']
                     elif "NOTES" in group.columns:
                         notes = safe_get(group["NOTES"].iloc[0])
-                    
-                    pdf.set_font("Arial", "B", 8.5)
-                    pdf.cell(usable_width * 0.10, 5, "NOTES:", border=1, align="C")
+
+                    # Calculate height needed for notes
                     pdf.set_font("Arial", "", 8.5)
-                    pdf.cell(usable_width * 0.90, 5, notes, border=1)
-                    pdf.ln(7)
+                    notes_height = calculate_text_height(pdf, notes, (usable_width * 0.90) - 2)
+
+                    # Store current position for notes
+                    notes_x = pdf.get_x()
+                    notes_y = pdf.get_y()
+
+                    # Draw NOTES section
+                    pdf.set_font("Arial", "B", 8.5)
+                    add_multiline_text_to_cell(pdf, "NOTES:", notes_x, notes_y, usable_width * 0.10, notes_height, border=1, align="C")
+
+                    pdf.set_font("Arial", "", 8.5)
+                    add_multiline_text_to_cell(pdf, notes, notes_x + (usable_width * 0.10), notes_y, usable_width * 0.90, notes_height, border=1, align="L")
+
+                    # Move to next section
+                    pdf.set_xy(notes_x, notes_y + notes_height + 5)                    
 
                     # Enhanced logo color table with actual colors
                     logo_colors = logo_info['logo_colors'] if logo_info else None
