@@ -1321,13 +1321,12 @@ def process_file_with_progress(file_path, sales_order_filter, session_id, approv
                         continue  # Skip this group
 
                     # Calculate proportional widths that add up to usable_width
-                    logo_sku_label_width = usable_width * 0.10   
+                    logo_sku_label_width = usable_width * 0.12   # Increased from 0.10 to 0.14
                     logo_sku_value_width = usable_width * 0.08   
-                    logo_pos_label_width = usable_width * 0.15   
-                    logo_pos_value_width = usable_width * 0.44   
-                    stitch_label_width = usable_width * 0.13     
-                    stitch_value_width = usable_width * 0.10     
-                    
+                    logo_pos_label_width = usable_width * 0.17   
+                    logo_pos_value_width = usable_width * 0.39   # Decreased from 0.44 to 0.40
+                    stitch_label_width = usable_width * 0.14     # Increased from 0.13 to 0.18
+                    stitch_value_width = usable_width * 0.10    # Decreased from 0.10 to 0.05
                     # Prepare values for multi-line processing
                     logo_display = str(logo_sku).strip()
                     logo_pos = ""
@@ -1338,19 +1337,31 @@ def process_file_with_progress(file_path, sales_order_filter, session_id, approv
                     
                     stitch_count = ""
                     if logo_info and logo_info['stitch_count']:
-                        stitch_count = str(logo_info['stitch_count'])
+                        stitch_count = str(logo_info['stitch_count']).replace('.0', '')
                     elif "STITCH COUNT" in group.columns:
-                        stitch_count = safe_get(group["STITCH COUNT"].iloc[0])
+                        stitch_count = safe_get(group["STITCH COUNT"].iloc[0]).replace('.0', '')
                     
                     # Enhanced logo section (simplified for space)
                     # Calculate heights needed for each field
-                    pdf.set_font("Arial", "", 8.5)
-                    logo_sku_height = calculate_text_height(pdf, logo_display, logo_sku_value_width - 2)
-                    logo_pos_height = calculate_text_height(pdf, logo_pos, logo_pos_value_width - 2)
-                    stitch_height = calculate_text_height(pdf, stitch_count, stitch_value_width - 2)
+                    # Set standard row height
+                    standard_height = 5
 
-                    # Use the maximum height needed
-                    row_height = max(logo_sku_height, logo_pos_height, stitch_height, 5)
+                    # Check if all text fits in standard height using same padding as add_multiline_text_to_cell
+                    pdf.set_font("Arial", "", 8.5)
+                    padding = 2  # Same as used in add_multiline_text_to_cell (2 * 1)
+                    logo_sku_fits = pdf.get_string_width(logo_display) <= (logo_sku_value_width - padding)
+                    logo_pos_fits = pdf.get_string_width(logo_pos) <= (logo_pos_value_width - padding)
+                    stitch_fits = pdf.get_string_width(stitch_count) <= (stitch_value_width - padding)
+
+                    # If everything fits, use standard height; otherwise calculate needed height
+                    if logo_sku_fits and logo_pos_fits and stitch_fits:
+                        row_height = standard_height
+                    else:
+                        # Calculate heights only when needed
+                        logo_sku_height = calculate_text_height(pdf, logo_display, logo_sku_value_width - 2)
+                        logo_pos_height = calculate_text_height(pdf, logo_pos, logo_pos_value_width - 2)
+                        stitch_height = calculate_text_height(pdf, stitch_count, stitch_value_width - 2)
+                        row_height = max(logo_sku_height, logo_pos_height, stitch_height, standard_height)
 
                     # Store current position
                     current_x = pdf.get_x()
@@ -1392,8 +1403,16 @@ def process_file_with_progress(file_path, sales_order_filter, session_id, approv
                         notes = safe_get(group["NOTES"].iloc[0])
 
                     # Calculate height needed for notes
+                   # Check if notes fit in standard height first
+                    standard_notes_height = 5
                     pdf.set_font("Arial", "", 8.5)
-                    notes_height = calculate_text_height(pdf, notes, (usable_width * 0.90) - 2)
+                    notes_fits = pdf.get_string_width(notes) <= ((usable_width * 0.90) - 4)
+
+                    if notes_fits:
+                        notes_height = standard_notes_height
+                    else:
+                        # Calculate height only when needed
+                        notes_height = calculate_text_height(pdf, notes, (usable_width * 0.90) - 2)
 
                     # Store current position for notes
                     notes_x = pdf.get_x()
