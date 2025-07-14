@@ -335,7 +335,7 @@ def add_multiline_text_to_cell(pdf, text, x, y, width, height, border=1, align="
     # If text fits in one line
     if pdf.get_string_width(text_str) <= available_width:
         if align == "C":
-            text_x = x + (width - pdf.get_string_width(text_str)) / 2
+            text_x = x + (width - pdf.get_string_width(text_str)) / 2 
         elif align == "L":
             text_x = x + padding
         else:  # Right align
@@ -345,6 +345,7 @@ def add_multiline_text_to_cell(pdf, text, x, y, width, height, border=1, align="
         pdf.set_xy(text_x, text_y)
         pdf.cell(pdf.get_string_width(text_str), line_height, text_str, 0, 0, 'L')
         return
+    
     
     # For long text, break it properly
     words = text_str.split()
