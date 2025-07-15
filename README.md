@@ -12,6 +12,6 @@ the v6.0 has code for python portability and running application on other comput
 
 the v7.0 has code for organizing art instructions pdfs by sales order by folder, zip folder name with date and timestamp. made date field value as the present date. filter for sales order approval status. wrapping text implemented for all fields.
 
-Note: Till v7.0 every feature for 1 Logo Embroidery is working fine. 
+Note: Till v7.0 every feature for 1 Logo Embroidery is working fine.
 
 From v8.0 Heat Transfer Code starts.
