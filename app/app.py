@@ -415,7 +415,7 @@ def add_multiline_text_to_cell(pdf, text, x, y, width, height, border=1, align="
 
 def add_logo_color_table(pdf, logo_colors=None):
     """Enhanced logo color table with actual colors from database and truncation (using consistent width)"""
-    pdf.ln(5)
+    #pdf.ln(5)
     # Use the same usable_width as other tables for consistent right margin
     usable_width = 190 - (2 * 0.8)  # Same calculation as in main function
     logo_color_width = usable_width * 0.20
@@ -1303,7 +1303,7 @@ def process_file_with_progress(file_path, sales_order_filter, session_id, approv
                         pdf.set_xy(current_x, current_y + cell_height)
                         pdf.ln()
                     
-                    pdf.ln(7)
+                    pdf.ln(5)
 
                     # Enhanced logo section with database lookup and multi-line support
                     logo_info = get_logo_info(str(logo_sku).strip())
