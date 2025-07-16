@@ -15,3 +15,5 @@ the v7.0 has code for organizing art instructions pdfs by sales order by folder,
 Note: Till v7.0 every feature for 1 Logo Embroidery is working fine.
 
 From v8.0 Heat Transfer Code starts.
+
+the v8.0 has code for Heat Transfer, which uses the code from Embroidery, just need to add part of code for Logo Color table.

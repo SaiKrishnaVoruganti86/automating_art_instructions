@@ -940,15 +940,25 @@ def validate_row_for_processing(row, report_data, approval_filter="approved_only
         report_data.append(row_data)
         return False, "Missing or empty Operational Code"
     
-    # Validation 6: Check Operational Code conditions
+    # Validation 6: Check Operational Code conditions (Updated with Heat Transfer support)
     if operational_code == 11:
-        # Valid - Operational Code is 11
+        # Valid - Operational Code is 11 (Embroidery)
         row_data['Execution Status'] = 'SUCCESS'
         row_data['Error Message'] = ''
+        row_data['Process Type'] = 'EMBROIDERY'
         report_data.append(row_data)
         return True, ""
+
+    elif operational_code == 20:
+        # Valid - Operational Code is 20 (Heat Transfer)
+        row_data['Execution Status'] = 'SUCCESS'
+        row_data['Error Message'] = ''
+        row_data['Process Type'] = 'HEAT_TRANSFER'
+        report_data.append(row_data)
+        return True, ""
+
     elif operational_code > 89:
-        # Check List of Operation Codes
+        # Check List of Operation Codes for multi-step processes
         list_operation_codes = []
         list_codes_raw = row.get("List of Operation Codes")
         
@@ -986,32 +996,243 @@ def validate_row_for_processing(row, report_data, approval_filter="approved_only
             report_data.append(row_data)
             return False, "No valid List of Operation Codes found for Operational Code > 89"
         
-        # Must contain exactly one 11
-        count_of_11 = list_operation_codes.count(11)
-        if count_of_11 != 1:
-            row_data['Execution Status'] = 'FAILED'
-            row_data['Error Message'] = f'List must contain exactly one 11 (found {count_of_11})'
-            report_data.append(row_data)
-            return False, f'List must contain exactly one 11 (found {count_of_11})'
+        # Check if it contains both 11 and 20 (not allowed)
+        contains_11 = 11 in list_operation_codes
+        contains_20 = 20 in list_operation_codes
         
-        # No operation code should be less than 60 (except 11)
-        codes_less_than_60 = [code for code in list_operation_codes if code < 60 and code != 11]
-        if codes_less_than_60:
+        if contains_11 and contains_20:
             row_data['Execution Status'] = 'FAILED'
-            row_data['Error Message'] = f'List contains codes < 60 (excluding 11): {codes_less_than_60}'
+            row_data['Error Message'] = 'List cannot contain both 11 (Embroidery) and 20 (Heat Transfer)'
             report_data.append(row_data)
-            return False, f'List contains codes < 60 (excluding 11): {codes_less_than_60}'
+            return False, "List cannot contain both 11 (Embroidery) and 20 (Heat Transfer)"
         
-        # Valid
-        row_data['Execution Status'] = 'SUCCESS'
-        row_data['Error Message'] = ''
-        report_data.append(row_data)
-        return True, ""
+        # EMBROIDERY validation (contains 11)
+        if contains_11:
+            # Must contain exactly one 11
+            count_of_11 = list_operation_codes.count(11)
+            if count_of_11 != 1:
+                row_data['Execution Status'] = 'FAILED'
+                row_data['Error Message'] = f'List must contain exactly one 11 for Embroidery (found {count_of_11})'
+                report_data.append(row_data)
+                return False, f'List must contain exactly one 11 for Embroidery (found {count_of_11})'
+            
+            # No operation code should be less than 60 (except 11)
+            codes_less_than_60 = [code for code in list_operation_codes if code < 60 and code != 11]
+            if codes_less_than_60:
+                row_data['Execution Status'] = 'FAILED'
+                row_data['Error Message'] = f'List contains codes < 60 (excluding 11): {codes_less_than_60}'
+                report_data.append(row_data)
+                return False, f'List contains codes < 60 (excluding 11): {codes_less_than_60}'
+            
+            # Valid Embroidery
+            row_data['Execution Status'] = 'SUCCESS'
+            row_data['Error Message'] = ''
+            row_data['Process Type'] = 'EMBROIDERY'
+            report_data.append(row_data)
+            return True, ""
+        
+        # HEAT TRANSFER validation (contains 20)
+        elif contains_20:
+            # Must contain exactly one 20
+            count_of_20 = list_operation_codes.count(20)
+            if count_of_20 != 1:
+                row_data['Execution Status'] = 'FAILED'
+                row_data['Error Message'] = f'List must contain exactly one 20 for Heat Transfer (found {count_of_20})'
+                report_data.append(row_data)
+                return False, f'List must contain exactly one 20 for Heat Transfer (found {count_of_20})'
+            
+            # No operation code should be less than 60 (except 20)
+            codes_less_than_60 = [code for code in list_operation_codes if code < 60 and code != 20]
+            if codes_less_than_60:
+                row_data['Execution Status'] = 'FAILED'
+                row_data['Error Message'] = f'List contains codes < 60 (excluding 20): {codes_less_than_60}'
+                report_data.append(row_data)
+                return False, f'List contains codes < 60 (excluding 20): {codes_less_than_60}'
+            
+            # Valid Heat Transfer
+            row_data['Execution Status'] = 'SUCCESS'
+            row_data['Error Message'] = ''
+            row_data['Process Type'] = 'HEAT_TRANSFER'
+            report_data.append(row_data)
+            return True, ""
+        
+        # List doesn't contain 11 or 20
+        else:
+            row_data['Execution Status'] = 'FAILED'
+            row_data['Error Message'] = 'List of Operation Codes must contain either 11 (Embroidery) or 20 (Heat Transfer)'
+            report_data.append(row_data)
+            return False, "List of Operation Codes must contain either 11 (Embroidery) or 20 (Heat Transfer)"
+
     else:
+        # Invalid operational code
         row_data['Execution Status'] = 'FAILED'
-        row_data['Error Message'] = f'Operational Code {operational_code} is not 11 and not > 89'
+        row_data['Error Message'] = f'Operational Code {operational_code} is not 11 (Embroidery), 20 (Heat Transfer), or > 89'
         report_data.append(row_data)
-        return False, f'Operational Code {operational_code} is not 11 and not > 89'
+        return False, f'Operational Code {operational_code} is not 11 (Embroidery), 20 (Heat Transfer), or > 89'
+
+def get_process_type_for_group(group):
+    """
+    Determine the process type (EMBROIDERY or HEAT_TRANSFER) for a group of rows
+    """
+    # Check the first row's operational code to determine process type
+    first_row = group.iloc[0]
+    operational_code = None
+    op_code_raw = first_row.get("OPERATIONAL CODE")
+    
+    if pd.notna(op_code_raw) and str(op_code_raw).strip():
+        op_code_str = str(op_code_raw).strip()
+        if op_code_str not in ["00", "0", ""]:
+            try:
+                if '.' in op_code_str:
+                    operational_code = int(float(op_code_str))
+                else:
+                    operational_code = int(op_code_str)
+            except (ValueError, TypeError):
+                operational_code = None
+    
+    # Determine process type based on operational code
+    if operational_code == 11:
+        return 'EMBROIDERY'
+    elif operational_code == 20:
+        return 'HEAT_TRANSFER'
+    elif operational_code and operational_code > 89:
+        # Check List of Operation Codes
+        list_codes_raw = first_row.get("List of Operation Codes")
+        if pd.notna(list_codes_raw) and str(list_codes_raw).strip():
+            list_codes_str = str(list_codes_raw).strip()
+            
+            # Parse comma-separated codes
+            list_operation_codes = []
+            if ',' in list_codes_str:
+                individual_codes = list_codes_str.split(',')
+                for individual_code in individual_codes:
+                    clean_code = individual_code.strip()
+                    if clean_code and clean_code.replace('.', '').isdigit():
+                        try:
+                            if '.' in clean_code:
+                                list_operation_codes.append(int(float(clean_code)))
+                            else:
+                                list_operation_codes.append(int(clean_code))
+                        except (ValueError, TypeError):
+                            pass
+            else:
+                # Single code
+                if list_codes_str.replace('.', '').isdigit():
+                    try:
+                        if '.' in list_codes_str:
+                            list_operation_codes.append(int(float(list_codes_str)))
+                        else:
+                            list_operation_codes.append(int(list_codes_str))
+                    except (ValueError, TypeError):
+                        pass
+            
+            # Check if contains 11 or 20
+            if 11 in list_operation_codes:
+                return 'EMBROIDERY'
+            elif 20 in list_operation_codes:
+                return 'HEAT_TRANSFER'
+    
+    # Default to embroidery if can't determine
+    return 'EMBROIDERY'
+
+def generate_logo_sku_section(pdf, logo_sku, logo_info, group, process_type, usable_width):
+    """
+    Generate the logo SKU section with conditional stitch count based on process type
+    """
+    # Prepare values for multi-line processing
+    logo_display = str(logo_sku).strip()
+    logo_pos = ""
+    if logo_info and logo_info['logo_position']:
+        logo_pos = logo_info['logo_position']
+    elif "LOGO POSITION" in group.columns:
+        logo_pos = safe_get(group["LOGO POSITION"].iloc[0])
+    
+    stitch_count = ""
+    if process_type == 'EMBROIDERY':  # Only show stitch count for embroidery
+        if logo_info and logo_info['stitch_count']:
+            stitch_count = str(logo_info['stitch_count']).replace('.0', '')
+        elif "STITCH COUNT" in group.columns:
+            stitch_count = safe_get(group["STITCH COUNT"].iloc[0]).replace('.0', '')
+    
+    # Calculate proportional widths based on process type
+    if process_type == 'EMBROIDERY':
+        # Original widths with stitch count
+        logo_sku_label_width = usable_width * 0.12
+        logo_sku_value_width = usable_width * 0.08
+        logo_pos_label_width = usable_width * 0.17
+        logo_pos_value_width = usable_width * 0.39
+        stitch_label_width = usable_width * 0.14
+        stitch_value_width = usable_width * 0.10
+    else:
+        # Heat transfer widths without stitch count (redistribute the space)
+        logo_sku_label_width = usable_width * 0.15   # Increased from 0.12
+        logo_sku_value_width = usable_width * 0.10   # Increased from 0.08
+        logo_pos_label_width = usable_width * 0.20   # Increased from 0.17
+        logo_pos_value_width = usable_width * 0.55   # Increased from 0.39
+        stitch_label_width = 0  # No stitch count for heat transfer
+        stitch_value_width = 0
+    
+    # Set standard row height
+    standard_height = 5
+    
+    # Check if all text fits in standard height
+    pdf.set_font("Arial", "", 8.5)
+    padding = 2
+    logo_sku_fits = pdf.get_string_width(logo_display) <= (logo_sku_value_width - padding)
+    logo_pos_fits = pdf.get_string_width(logo_pos) <= (logo_pos_value_width - padding)
+    
+    if process_type == 'EMBROIDERY':
+        stitch_fits = pdf.get_string_width(stitch_count) <= (stitch_value_width - padding)
+        if logo_sku_fits and logo_pos_fits and stitch_fits:
+            row_height = standard_height
+        else:
+            # Calculate heights when needed
+            logo_sku_height = calculate_text_height(pdf, logo_display, logo_sku_value_width - 2)
+            logo_pos_height = calculate_text_height(pdf, logo_pos, logo_pos_value_width - 2)
+            stitch_height = calculate_text_height(pdf, stitch_count, stitch_value_width - 2)
+            row_height = max(logo_sku_height, logo_pos_height, stitch_height, standard_height)
+    else:
+        # Heat transfer - no stitch count
+        if logo_sku_fits and logo_pos_fits:
+            row_height = standard_height
+        else:
+            logo_sku_height = calculate_text_height(pdf, logo_display, logo_sku_value_width - 2)
+            logo_pos_height = calculate_text_height(pdf, logo_pos, logo_pos_value_width - 2)
+            row_height = max(logo_sku_height, logo_pos_height, standard_height)
+    
+    # Store current position
+    current_x = pdf.get_x()
+    current_y = pdf.get_y()
+    
+    # Draw LOGO SKU section
+    pdf.set_font("Arial", "B", 8.5)
+    add_multiline_text_to_cell(pdf, "LOGO SKU:", current_x, current_y, logo_sku_label_width, row_height, border=1, align="C")
+    
+    pdf.set_font("Arial", "", 8.5)
+    add_multiline_text_to_cell(pdf, logo_display, current_x + logo_sku_label_width, current_y, logo_sku_value_width, row_height, border=1, align="C")
+    
+    # Draw LOGO POSITION section
+    pdf.set_font("Arial", "B", 8.5)
+    add_multiline_text_to_cell(pdf, "LOGO POSITION:", current_x + logo_sku_label_width + logo_sku_value_width, current_y, logo_pos_label_width, row_height, border=1, align="C")
+    
+    pdf.set_font("Arial", "", 8.5)
+    # Check if logo position needs yellow highlighting
+    if logo_pos.strip().upper() != "LEFT CHEST":
+        add_multiline_text_to_cell(pdf, logo_pos, current_x + logo_sku_label_width + logo_sku_value_width + logo_pos_label_width, current_y, logo_pos_value_width, row_height, border=1, align="L", fill=True)
+    else:
+        add_multiline_text_to_cell(pdf, logo_pos, current_x + logo_sku_label_width + logo_sku_value_width + logo_pos_label_width, current_y, logo_pos_value_width, row_height, border=1, align="L")
+    
+    # Draw STITCH COUNT section (only for embroidery)
+    if process_type == 'EMBROIDERY':
+        pdf.set_font("Arial", "B", 8.5)
+        add_multiline_text_to_cell(pdf, "STITCH COUNT:", current_x + logo_sku_label_width + logo_sku_value_width + logo_pos_label_width + logo_pos_value_width, current_y, stitch_label_width, row_height, border=1, align="C")
+        
+        pdf.set_font("Arial", "", 8.5)
+        add_multiline_text_to_cell(pdf, stitch_count, current_x + logo_sku_label_width + logo_sku_value_width + logo_pos_label_width + logo_pos_value_width + stitch_label_width, current_y, stitch_value_width, row_height, border=1, align="C")
+    
+    # Move to next section
+    pdf.set_xy(current_x, current_y + row_height + 2)
+
 
 def process_file_with_progress(file_path, sales_order_filter, session_id, approval_filter="approved_only"):
     """
@@ -1100,6 +1321,7 @@ def process_file_with_progress(file_path, sales_order_filter, session_id, approv
             
             for group_index, ((doc_num, logo_sku), group) in enumerate(grouped):
                 # Update progress for each PDF
+                process_type = get_process_type_for_group(group)
                 pdf_progress = 60 + (group_index / total_groups) * 20  # PDF generation takes 20% (60-80%)
                 update_progress(session_id, 'processing', pdf_progress, 
                               f'Generating PDF {group_index + 1} of {total_groups} (SO: {doc_num}, Logo: {logo_sku})', 
@@ -1124,7 +1346,10 @@ def process_file_with_progress(file_path, sales_order_filter, session_id, approv
                     client_name = truncate_text(safe_get(group["Customer/Vendor Name"].iloc[0]), pdf, (left_width - 20) * 0.95)
 
                     pdf.set_font("Arial", "B", 10)
-                    pdf.cell(left_width, 8, "ART INSTRUCTIONS", border=1, align="C")
+                    if process_type == 'HEAT_TRANSFER':
+                        pdf.cell(left_width, 8, "ART INSTRUCTIONS - HEAT TRANSFER", border=1, align="C")
+                    else:
+                        pdf.cell(left_width, 8, "ART INSTRUCTIONS - EMBROIDERY", border=1, align="C")
                     pdf.cell(right_width, 8, "", border=0)
                     pdf.image(STATIC_IMAGE_PATH, x=pdf.get_x() - right_width + 3, y=pdf.get_y() + 1, w=right_width - 6)
                     pdf.ln()
@@ -1321,80 +1546,8 @@ def process_file_with_progress(file_path, sales_order_filter, session_id, approv
     
                         continue  # Skip this group
 
-                    # Calculate proportional widths that add up to usable_width
-                    logo_sku_label_width = usable_width * 0.12   # Increased from 0.10 to 0.14
-                    logo_sku_value_width = usable_width * 0.08   
-                    logo_pos_label_width = usable_width * 0.17   
-                    logo_pos_value_width = usable_width * 0.39   # Decreased from 0.44 to 0.40
-                    stitch_label_width = usable_width * 0.14     # Increased from 0.13 to 0.18
-                    stitch_value_width = usable_width * 0.10    # Decreased from 0.10 to 0.05
-                    # Prepare values for multi-line processing
-                    logo_display = str(logo_sku).strip()
-                    logo_pos = ""
-                    if logo_info and logo_info['logo_position']:
-                        logo_pos = logo_info['logo_position']
-                    elif "LOGO POSITION" in group.columns:
-                        logo_pos = safe_get(group["LOGO POSITION"].iloc[0])
-                    
-                    stitch_count = ""
-                    if logo_info and logo_info['stitch_count']:
-                        stitch_count = str(logo_info['stitch_count']).replace('.0', '')
-                    elif "STITCH COUNT" in group.columns:
-                        stitch_count = safe_get(group["STITCH COUNT"].iloc[0]).replace('.0', '')
-                    
-                    # Enhanced logo section (simplified for space)
-                    # Calculate heights needed for each field
-                    # Set standard row height
-                    standard_height = 5
-
-                    # Check if all text fits in standard height using same padding as add_multiline_text_to_cell
-                    pdf.set_font("Arial", "", 8.5)
-                    padding = 2  # Same as used in add_multiline_text_to_cell (2 * 1)
-                    logo_sku_fits = pdf.get_string_width(logo_display) <= (logo_sku_value_width - padding)
-                    logo_pos_fits = pdf.get_string_width(logo_pos) <= (logo_pos_value_width - padding)
-                    stitch_fits = pdf.get_string_width(stitch_count) <= (stitch_value_width - padding)
-
-                    # If everything fits, use standard height; otherwise calculate needed height
-                    if logo_sku_fits and logo_pos_fits and stitch_fits:
-                        row_height = standard_height
-                    else:
-                        # Calculate heights only when needed
-                        logo_sku_height = calculate_text_height(pdf, logo_display, logo_sku_value_width - 2)
-                        logo_pos_height = calculate_text_height(pdf, logo_pos, logo_pos_value_width - 2)
-                        stitch_height = calculate_text_height(pdf, stitch_count, stitch_value_width - 2)
-                        row_height = max(logo_sku_height, logo_pos_height, stitch_height, standard_height)
-
-                    # Store current position
-                    current_x = pdf.get_x()
-                    current_y = pdf.get_y()
-
-                    # Draw LOGO SKU section
-                    pdf.set_font("Arial", "B", 8.5)
-                    add_multiline_text_to_cell(pdf, "LOGO SKU:", current_x, current_y, logo_sku_label_width, row_height, border=1, align="C")
-
-                    pdf.set_font("Arial", "", 8.5)
-                    add_multiline_text_to_cell(pdf, logo_display, current_x + logo_sku_label_width, current_y, logo_sku_value_width, row_height, border=1, align="C")
-
-                    # Draw LOGO POSITION section
-                    pdf.set_font("Arial", "B", 8.5)
-                    add_multiline_text_to_cell(pdf, "LOGO POSITION:", current_x + logo_sku_label_width + logo_sku_value_width, current_y, logo_pos_label_width, row_height, border=1, align="C")
-
-                    pdf.set_font("Arial", "", 8.5)
-                    # Check if logo position needs yellow highlighting
-                    if logo_pos.strip().upper() != "LEFT CHEST":
-                        add_multiline_text_to_cell(pdf, logo_pos, current_x + logo_sku_label_width + logo_sku_value_width + logo_pos_label_width, current_y, logo_pos_value_width, row_height, border=1, align="L", fill=True)
-                    else:
-                        add_multiline_text_to_cell(pdf, logo_pos, current_x + logo_sku_label_width + logo_sku_value_width + logo_pos_label_width, current_y, logo_pos_value_width, row_height, border=1, align="L")
-
-                    # Draw STITCH COUNT section
-                    pdf.set_font("Arial", "B", 8.5)
-                    add_multiline_text_to_cell(pdf, "STITCH COUNT:", current_x + logo_sku_label_width + logo_sku_value_width + logo_pos_label_width + logo_pos_value_width, current_y, stitch_label_width, row_height, border=1, align="C")
-
-                    pdf.set_font("Arial", "", 8.5)
-                    add_multiline_text_to_cell(pdf, stitch_count, current_x + logo_sku_label_width + logo_sku_value_width + logo_pos_label_width + logo_pos_value_width + stitch_label_width, current_y, stitch_value_width, row_height, border=1, align="C")
-
-                    # Move to next section
-                    pdf.set_xy(current_x, current_y + row_height + 2)
+                    # Generate logo SKU section with conditional stitch count
+                    generate_logo_sku_section(pdf, logo_sku, logo_info, group, process_type, usable_width)
 
                     # Enhanced notes section with multi-line support
                     notes = ""

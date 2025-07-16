@@ -80,19 +80,22 @@ class ReportGenerator:
             # Get customer name and due date from first item
             customer_name = items[0].get('Customer/Vendor Name', 'N/A') if items else 'N/A'
             due_date = items[0].get('Due Date', 'N/A') if items else 'N/A'
+            # Get process type from first item
+            process_type = items[0].get('Process Type', 'EMBROIDERY') if items else 'EMBROIDERY'
             
             overview_data.append({
-                'Document Number': so_number,
-                'Customer/Vendor Name': customer_name,
-                'Due Date': due_date,
-                'Total Items': so_total,
-                'Success': so_success,
-                'Failed': so_failed,
-                'N/A': so_na,
-                'Not Approved': so_not_approved,
-                'Success Rate (%)': round(so_success_rate, 1),
-                'Completion Status': completion_status
-            })
+            'Document Number': so_number,
+            'Customer/Vendor Name': customer_name,
+            'Due Date': due_date,
+            'Process Type': process_type,
+            'Total Items': so_total,
+            'Success': so_success,
+            'Failed': so_failed,
+            'N/A': so_na,
+            'Not Approved': so_not_approved,
+            'Success Rate (%)': round(so_success_rate, 1),
+            'Completion Status': completion_status
+        })
         
         # NO SORTING - preserve original order from OrderedDict
         return overview_data
@@ -168,10 +171,11 @@ class ReportGenerator:
                 'Document Number',
                 'LOGO', 
                 'Execution Status',
+                'Process Type',
                 'SUBCATEGORY',
                 'VENDOR STYLE', 
                 'COLOR',
-                'SIZE',  # SIZE column as requested
+                'SIZE',
                 'Quantity',
                 'Customer/Vendor Name',
                 'DueDateStatus',
