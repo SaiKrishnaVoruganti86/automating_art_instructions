@@ -1257,7 +1257,7 @@ def process_file_with_progress(file_path, sales_order_filter, session_id, approv
                     total_width = pdf.get_string_width(total_display)
                     total_cell_width = QTY_WIDTH * 0.95  # Use 95% of quantity cell width
                     
-                    if total_width <= total_cell_width:
+                    if total_width <= total_cell_width: 
                         # Single line - normal height
                         cell_height = 5
                         pdf.cell(COLOR_WIDTH, cell_height, "", 1)
