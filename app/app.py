@@ -225,6 +225,32 @@ def truncate_text(text, pdf, max_width):
         text = text[:-1]
     return text + ellipsis if text != original else text
 
+def format_numeric_string(value):
+    """Format numeric values to remove unnecessary decimal places"""
+    if pd.isna(value) or value == "":
+        return ""
+    
+    try:
+        # Convert to string first
+        value_str = str(value).strip()
+        
+        # If it ends with .0, remove it
+        if value_str.endswith('.0'):
+            return value_str[:-2]
+        
+        # If it's a float that equals an integer, convert to integer
+        try:
+            float_val = float(value_str)
+            if float_val.is_integer():
+                return str(int(float_val))
+            else:
+                return value_str
+        except (ValueError, TypeError):
+            return value_str
+            
+    except Exception as e:
+        return str(value)
+
 def render_items_section(pdf, vendor_styles, total_width):
     styles = vendor_styles.split(", ")
     label_width = 30
@@ -414,7 +440,7 @@ def add_multiline_text_to_cell(pdf, text, x, y, width, height, border=1, align="
         pdf.cell(pdf.get_string_width(line), line_height, line, 0, 0, 'L')
 
 def add_logo_color_table(pdf, logo_colors=None):
-    """Enhanced logo color table with actual colors from database and truncation (using consistent width)"""
+    """Enhanced logo color table with actual colors from database and truncation, with TONE ON TONE highlighting (using consistent width)"""
     #pdf.ln(5)
     # Use the same usable_width as other tables for consistent right margin
     usable_width = 190 - (2 * 0.8)  # Same calculation as in main function
@@ -427,17 +453,39 @@ def add_logo_color_table(pdf, logo_colors=None):
     pdf.cell(logo_color_width, 5, "LOGO COLOR:", border=1, align="C")
     pdf.set_font("Arial", "", 8.5)
     
-    # Add first color if available (truncated to 95% of cell width)
+    # Add first color if available (check for TONE ON TONE highlighting)
     color1 = logo_colors[0] if logo_colors and len(logo_colors) > 0 else ""
     color1_display = truncate_text(color1, pdf, value_width * 0.95)
     pdf.cell(number_width, 5, "1", border=1, align="C")
-    pdf.cell(value_width, 5, color1_display, border=1)
     
-    # Add ninth color if available (truncated to 95% of cell width)
+    # Store current position for color1 cell
+    current_x = pdf.get_x()
+    current_y = pdf.get_y()
+    
+    # Check if color1 is "TONE ON TONE" and highlight if so
+    if color1.strip().upper() == "TONE ON TONE":
+        add_multiline_text_to_cell(pdf, color1_display, current_x, current_y, value_width, 5, border=1, align="L", fill=True)
+    else:
+        add_multiline_text_to_cell(pdf, color1_display, current_x, current_y, value_width, 5, border=1, align="L")
+    
+    # Move to position for color9
+    pdf.set_xy(current_x + value_width, current_y)
+    
+    # Add ninth color if available (check for TONE ON TONE highlighting)
     color9 = logo_colors[8] if logo_colors and len(logo_colors) > 8 else ""
     color9_display = truncate_text(color9, pdf, value_width * 0.95)
     pdf.cell(number_width, 5, "9", border=1, align="C")
-    pdf.cell(value_width, 5, color9_display, border=1)
+    
+    # Store current position for color9 cell
+    current_x = pdf.get_x()
+    current_y = pdf.get_y()
+    
+    # Check if color9 is "TONE ON TONE" and highlight if so
+    if color9.strip().upper() == "TONE ON TONE":
+        add_multiline_text_to_cell(pdf, color9_display, current_x, current_y, value_width, 5, border=1, align="L", fill=True)
+    else:
+        add_multiline_text_to_cell(pdf, color9_display, current_x, current_y, value_width, 5, border=1, align="L")
+    
     pdf.ln()
 
     # Second row: PRODUCTION DAY directly under LOGO COLOR
@@ -445,15 +493,38 @@ def add_logo_color_table(pdf, logo_colors=None):
     pdf.cell(logo_color_width, 5, "PRODUCTION DAY:", border=1, align="C")
     pdf.set_font("Arial", "", 8.5)
     
-    # Add second and tenth colors if available (truncated to 95% of cell width)
+    # Add second and tenth colors if available (check for TONE ON TONE highlighting)
     color2 = logo_colors[1] if logo_colors and len(logo_colors) > 1 else ""
     color2_display = truncate_text(color2, pdf, value_width * 0.95)
     color10 = logo_colors[9] if logo_colors and len(logo_colors) > 9 else ""
     color10_display = truncate_text(color10, pdf, value_width * 0.95)
+    
     pdf.cell(number_width, 5, "2", border=1, align="C")
-    pdf.cell(value_width, 5, color2_display, border=1)
+    
+    # Store current position for color2 cell
+    current_x = pdf.get_x()
+    current_y = pdf.get_y()
+    
+    # Check if color2 is "TONE ON TONE" and highlight if so
+    if color2.strip().upper() == "TONE ON TONE":
+        add_multiline_text_to_cell(pdf, color2_display, current_x, current_y, value_width, 5, border=1, align="L", fill=True)
+    else:
+        add_multiline_text_to_cell(pdf, color2_display, current_x, current_y, value_width, 5, border=1, align="L")
+    
+    # Move to position for color10
+    pdf.set_xy(current_x + value_width, current_y)
     pdf.cell(number_width, 5, "10", border=1, align="C")
-    pdf.cell(value_width, 5, color10_display, border=1)
+    
+    # Store current position for color10 cell
+    current_x = pdf.get_x()
+    current_y = pdf.get_y()
+    
+    # Check if color10 is "TONE ON TONE" and highlight if so
+    if color10.strip().upper() == "TONE ON TONE":
+        add_multiline_text_to_cell(pdf, color10_display, current_x, current_y, value_width, 5, border=1, align="L", fill=True)
+    else:
+        add_multiline_text_to_cell(pdf, color10_display, current_x, current_y, value_width, 5, border=1, align="L")
+    
     pdf.ln()
 
     # Calculate the height of the merged cell (6 rows * 5 units = 30 units)
@@ -479,9 +550,31 @@ def add_logo_color_table(pdf, logo_colors=None):
         color_right_display = truncate_text(color_right, pdf, value_width * 0.95)
         
         pdf.cell(number_width, 5, str(i), border=1, align="C")
-        pdf.cell(value_width, 5, color_left_display, border=1)
+        
+        # Store current position for left color cell
+        cell_x = pdf.get_x()
+        cell_y = pdf.get_y()
+        
+        # Check if left color is "TONE ON TONE" and highlight if so
+        if color_left.strip().upper() == "TONE ON TONE":
+            add_multiline_text_to_cell(pdf, color_left_display, cell_x, cell_y, value_width, 5, border=1, align="L", fill=True)
+        else:
+            add_multiline_text_to_cell(pdf, color_left_display, cell_x, cell_y, value_width, 5, border=1, align="L")
+        
+        # Move to position for right number
+        pdf.set_xy(cell_x + value_width, cell_y)
         pdf.cell(number_width, 5, str(i + 8), border=1, align="C")
-        pdf.cell(value_width, 5, color_right_display, border=1)
+        
+        # Store current position for right color cell
+        cell_x = pdf.get_x()
+        cell_y = pdf.get_y()
+        
+        # Check if right color is "TONE ON TONE" and highlight if so
+        if color_right.strip().upper() == "TONE ON TONE":
+            add_multiline_text_to_cell(pdf, color_right_display, cell_x, cell_y, value_width, 5, border=1, align="L", fill=True)
+        else:
+            add_multiline_text_to_cell(pdf, color_right_display, cell_x, cell_y, value_width, 5, border=1, align="L")
+        
         # Move to next line, but stay at the same x position (after the merged cell)
         pdf.set_xy(current_x + logo_color_width, pdf.get_y() + 5)
 
@@ -489,7 +582,19 @@ def add_logo_color_table(pdf, logo_colors=None):
     color8 = logo_colors[7] if logo_colors and len(logo_colors) > 7 else ""
     color8_display = truncate_text(color8, pdf, value_width * 0.95)
     pdf.cell(number_width, 5, "8", border=1, align="C")
-    pdf.cell(value_width, 5, color8_display, border=1)
+    
+    # Store current position for color8 cell
+    cell_x = pdf.get_x()
+    cell_y = pdf.get_y()
+    
+    # Check if color8 is "TONE ON TONE" and highlight if so
+    if color8.strip().upper() == "TONE ON TONE":
+        add_multiline_text_to_cell(pdf, color8_display, cell_x, cell_y, value_width, 5, border=1, align="L", fill=True)
+    else:
+        add_multiline_text_to_cell(pdf, color8_display, cell_x, cell_y, value_width, 5, border=1, align="L")
+    
+    # Move to position for empty right cell
+    pdf.set_xy(cell_x + value_width, cell_y)
     pdf.cell(number_width + value_width, 5, "", border=1)
     pdf.ln()
 
@@ -1142,7 +1247,7 @@ def process_file_with_progress(file_path, sales_order_filter, session_id, approv
                     pdf.set_font("Arial", "B", 8.5)
                     pdf.cell(20, 6, "SO#:", border=1, align="C")
                     pdf.set_font("Arial", "", 8.5)
-                    so_display = truncate_text(str(doc_num), pdf, (so_section_width - 20) * 0.95)
+                    so_display = truncate_text(format_numeric_string(doc_num), pdf, (so_section_width - 20) * 0.95)
                     pdf.cell(so_section_width - 20, 6, so_display, border=1)
 
                     pdf.set_font("Arial", "B", 8.5)
@@ -1152,7 +1257,7 @@ def process_file_with_progress(file_path, sales_order_filter, session_id, approv
                     pdf.cell(right_width, 6, "", border=0)
                     pdf.ln(8)
 
-                    vendor_styles = ", ".join(group["VENDOR STYLE"].dropna().astype(str).unique())
+                    vendor_styles = ", ".join([format_numeric_string(style) for style in group["VENDOR STYLE"].dropna().astype(str).unique() if format_numeric_string(style)])
                     render_items_section(pdf, vendor_styles, usable_width)
 
                     pdf.ln(2)
