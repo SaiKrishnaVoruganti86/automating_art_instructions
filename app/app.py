@@ -684,6 +684,11 @@ def add_heat_transfer_logo_table(pdf, logo_colors=None, logo_info=None):
     # Add the PRODUCTION DAY text at the top of the bordered area
     pdf.set_xy(current_x, current_y + 1)
     pdf.cell(production_day_width, 3, "PRODUCTION DAY:", align="C")
+
+    # Add horizontal line under "PRODUCTION DAY:" text
+    line_y = current_y + 4  # Position line under the text (1 + 3 = 4)
+    pdf.line(current_x, line_y, current_x + production_day_width, line_y)
+
     # The rest of the area remains empty but bordered
     
     # Draw the logo color table on the right
@@ -704,8 +709,7 @@ def add_heat_transfer_logo_table(pdf, logo_colors=None, logo_info=None):
     ]
     
     row_height = 5
-    pdf.set_font("Arial", "B", 8.5)
-    
+
     # Draw each field row
     for i, (field_name, field_value) in enumerate(fields):
         row_y = current_y + (i * row_height)
@@ -715,7 +719,12 @@ def add_heat_transfer_logo_table(pdf, logo_colors=None, logo_info=None):
         field_width = logo_table_width * 0.4
         value_width = logo_table_width * 0.6
         
+        # Set font to bold for field name
+        pdf.set_font("Arial", "B", 8.5)
         pdf.cell(field_width, row_height, field_name, border=1, align="L")
+        
+        # Set font to regular (non-bold) for field value
+        pdf.set_font("Arial", "", 8.5)
         pdf.cell(value_width, row_height, str(field_value), border=1, align="L")
     
     # Move cursor to next line
