@@ -67,16 +67,21 @@ def load_logo_database():
         print(f"Logo database file not found at: {logo_db_path}")
         logo_database = None
 
-def get_logo_info(logo_sku):
-    """Get logo information from the database based on SKU (preserving leading zeros)"""
-    if logo_database is None or pd.isna(logo_sku) or logo_sku == "" or str(logo_sku) == "0000":
-        return None
+def get_logo_info(logo_sku, expected_process_type=None):
+    """Enhanced logo info extraction with support for both embroidery and heat transfer with strict validation"""
+    global logo_database
+    
+    if logo_database is None:
+        return None, "Logo database not loaded"
+    
+    if pd.isna(logo_sku) or logo_sku == "" or str(logo_sku) == "0000":
+        return None, "Invalid Logo SKU"
     
     try:
         # Preserve the original format including leading zeros
         logo_sku_str = str(logo_sku).strip()
         
-        # Search for the logo SKU in the database (try both original and numeric formats)
+        # Search for the logo SKU in the database
         logo_row = logo_database[logo_database['Logo SKU'].astype(str).str.strip() == logo_sku_str]
         
         # If not found with original format, try numeric conversion for backward compatibility
@@ -84,23 +89,179 @@ def get_logo_info(logo_sku):
             numeric_sku = str(int(logo_sku_str))
             logo_row = logo_database[logo_database['Logo SKU'].astype(str).str.strip() == numeric_sku]
         
-        if not logo_row.empty:
-            row = logo_row.iloc[0]
-            return {
-                'logo_sku': logo_sku_str,  # Use original format
-                'client': safe_get(row['CLIENT']),
-                'logo_position': safe_get(row['Logo Position']),
-                'operation_type': safe_get(row['Operation Type']),
-                'stitch_count': safe_get(row['Stitch Count']),
-                'file_name': safe_get(row['File Name']),
-                'notes': safe_get(row['Notes']),
-                'size': safe_get(row['Size']),
-                'logo_colors': get_logo_colors(row)
-            }
+        # VALIDATION 1: Logo SKU not found
+        if logo_row.empty:
+            return None, f"Logo SKU {logo_sku_str} not found in database"
+        
+        # VALIDATION 2: Multiple entries (shouldn't happen)
+        if len(logo_row) > 1:
+            return None, f"Multiple entries found for Logo SKU {logo_sku_str}"
+        
+        row = logo_row.iloc[0]
+        
+        # VALIDATION 3: Missing Operation Type
+        db_operation_type = safe_get(row['Operation Type']).strip().upper()
+        if not db_operation_type:
+            return None, f"Operation Type missing in database for Logo SKU {logo_sku_str}"
+        
+        # VALIDATION 4: Invalid Operation Type (Updated for abbreviated forms)
+        db_operation_type = safe_get(row['Operation Type']).strip().upper()
+        if not db_operation_type:
+            return None, f"Operation Type missing in database for Logo SKU {logo_sku_str}"
+
+        # Convert abbreviated forms to standardized forms
+        if db_operation_type == 'EMB':
+            standardized_operation_type = 'EMBROIDERY'
+        elif db_operation_type == 'HT':
+            standardized_operation_type = 'HEAT_TRANSFER'
+        else:
+            return None, f"Invalid Operation Type '{db_operation_type}' for Logo SKU {logo_sku_str} (expected EMB or HT)"
+
+        # VALIDATION 5: Process type mismatch (if expected_process_type provided)
+        if expected_process_type and expected_process_type != standardized_operation_type:
+            return None, f"Process mismatch - Expected {expected_process_type} but database shows {db_operation_type} for Logo SKU {logo_sku_str}"
+        
+        # Extract common data
+        common_data = {
+            'logo_sku': logo_sku_str,
+            'client': safe_get(row['CLIENT']),
+            'logo_position': safe_get(row['Logo Position']),
+            'operation_type': standardized_operation_type,
+            'file_name': safe_get(row['File Name']),
+            'notes': safe_get(row['Notes']),
+            'size': safe_get(row['Size'])
+        }
+        
+        # Process based on operation type with strict validation
+        if standardized_operation_type == 'EMBROIDERY':
+            result = get_embroidery_info(row, common_data, logo_sku_str)
+        elif standardized_operation_type == 'HEAT_TRANSFER':
+            result = get_heat_transfer_info(row, common_data, logo_sku_str)
+        
+        if result is None:
+            return None, "Data validation failed"
+        
+        return result, None
+        
     except Exception as e:
         print(f"Error looking up logo SKU {logo_sku}: {e}")
+        return None, f"Database lookup error: {str(e)}"
+
+def get_embroidery_info(row, common_data, logo_sku_str):
+    """Extract embroidery-specific information with strict data validation - FAILURES approach"""
     
-    return None
+    # STRICT VALIDATION 1: Check for heat transfer data contamination
+    heat_transfer_fields = ['LOGO COLOR:', 'MATERIAL:', 'PEEL:', 'TIME:', 'TEMP:', 'PRESSURE:']
+    contaminated_fields = []
+    
+    for field in heat_transfer_fields:
+        if field in row and pd.notna(row[field]) and str(row[field]).strip():
+            contaminated_fields.append(field)
+    
+    if contaminated_fields:
+        contaminated_list = ', '.join(contaminated_fields)
+        print(f"❌ ERROR: Database inconsistency - Logo SKU {logo_sku_str} (EMBROIDERY) contains heat transfer data in: {contaminated_list}")
+        return None  # FAILURE - stops processing immediately
+    
+    # VALIDATION 2: Check stitch count (required for embroidery)
+    stitch_count = safe_get(row['Stitch Count'])
+    if not stitch_count or stitch_count in ['0', '0.0', '', 'NULL', 'null']:
+        print(f"❌ ERROR: Stitch Count missing or invalid for embroidery Logo SKU {logo_sku_str}")
+        return None  # FAILURE
+    
+    # VALIDATION 3: Check logo colors (at least one required)
+    logo_colors = []
+    for i in range(1, 16):  # Check Logo Color 1 through Logo Color 15
+        color_field = f'Logo Color {i}'
+        if color_field in row and pd.notna(row[color_field]) and str(row[color_field]).strip():
+            logo_colors.append(str(row[color_field]).strip())
+    
+    if not logo_colors:  # No colors found at all
+        print(f"❌ ERROR: No logo colors found for embroidery Logo SKU {logo_sku_str} - all Logo Color 1-15 fields are empty")
+        return None  # FAILURE
+    
+    # SUCCESS - All validations passed
+    print(f"✅ SUCCESS: Embroidery data validated for Logo SKU {logo_sku_str}")
+    print(f"   - Stitch Count: {stitch_count}")  
+    print(f"   - Colors Found: {len(logo_colors)} colors")
+    
+    common_data.update({
+        'stitch_count': stitch_count,
+        'logo_colors': logo_colors,
+        'heat_transfer': None  # Not applicable
+    })
+    
+    return common_data
+
+def get_heat_transfer_info(row, common_data, logo_sku_str):
+    """Extract heat transfer-specific information with strict data validation - FAILURES approach"""
+    
+    # STRICT VALIDATION 1: Check for embroidery stitch count contamination
+    emb_stitch = safe_get(row['Stitch Count'])
+    if emb_stitch and emb_stitch not in ['0', '0.0', '', 'NULL', 'null']:
+        print(f"❌ ERROR: Database inconsistency - Logo SKU {logo_sku_str} (HEAT TRANSFER) contains embroidery stitch count: '{emb_stitch}'")
+        return None  # FAILURE - stops processing immediately
+    
+    # STRICT VALIDATION 2: Check for embroidery logo colors contamination
+    contaminated_colors = []
+    for i in range(1, 16):  # Check Logo Color 1 through Logo Color 15
+        color_field = f'Logo Color {i}'
+        if color_field in row and pd.notna(row[color_field]) and str(row[color_field]).strip():
+            contaminated_colors.append(f"{color_field}: '{str(row[color_field]).strip()}'")
+    
+    if contaminated_colors:
+        contaminated_list = ', '.join(contaminated_colors)
+        print(f"❌ ERROR: Database inconsistency - Logo SKU {logo_sku_str} (HEAT TRANSFER) contains embroidery logo colors: {contaminated_list}")
+        return None  # FAILURE - stops processing immediately
+    
+    # VALIDATION 3: Check required logo color (LOGO COLOR: with colon)
+    logo_color = safe_get(row['LOGO COLOR:'])  # Note the colon!
+    if not logo_color or logo_color.strip() == '':
+        print(f"❌ ERROR: Logo Color (LOGO COLOR:) missing for heat transfer Logo SKU {logo_sku_str}")
+        return None  # FAILURE
+    
+    # VALIDATION 4: Check all other mandatory heat transfer fields
+    mandatory_fields = {
+        'MATERIAL:': 'Material',
+        'TEMP:': 'Temperature', 
+        'TIME:': 'Time',
+        'PRESSURE:': 'Pressure',
+        'PEEL:': 'Peel'
+    }
+    
+    for field_key, field_name in mandatory_fields.items():
+        field_value = safe_get(row[field_key])
+        if not field_value or field_value.strip() == '':
+            print(f"❌ ERROR: {field_name} ({field_key}) missing for heat transfer Logo SKU {logo_sku_str}")
+            return None  # FAILURE
+    
+    # Extract all heat transfer data (all fields are now validated as mandatory)
+    heat_transfer_data = {
+        'logo_color': logo_color.strip(),
+        'material': safe_get(row['MATERIAL:']).strip(),
+        'temp': safe_get(row['TEMP:']).strip(),
+        'time': safe_get(row['TIME:']).strip(),
+        'pressure': safe_get(row['PRESSURE:']).strip(),
+        'peel': safe_get(row['PEEL:']).strip()
+    }
+    
+    # SUCCESS - All validations passed
+    print(f"✅ SUCCESS: Heat transfer data validated for Logo SKU {logo_sku_str}")
+    print(f"   - Logo Color: {logo_color}")
+    print(f"   - Material: {heat_transfer_data['material']}")
+    print(f"   - Temp: {heat_transfer_data['temp']}")
+    print(f"   - Time: {heat_transfer_data['time']}")
+    print(f"   - Pressure: {heat_transfer_data['pressure']}")
+    print(f"   - Peel: {heat_transfer_data['peel']}")
+    print(f"   - All 6 mandatory fields completed")
+    
+    common_data.update({
+        'stitch_count': None,  # Not applicable for heat transfer
+        'logo_colors': [logo_color.strip()],  # Single color as array for consistency
+        'heat_transfer': heat_transfer_data
+    })
+    
+    return common_data
 
 def get_logo_colors(row):
     """Extract logo colors from the database row"""
@@ -413,9 +574,15 @@ def add_multiline_text_to_cell(pdf, text, x, y, width, height, border=1, align="
         pdf.set_xy(line_x, line_y)
         pdf.cell(pdf.get_string_width(line), line_height, line, 0, 0, 'L')
 
-def add_logo_color_table(pdf, logo_colors=None):
-    """Enhanced logo color table with actual colors from database and truncation (using consistent width)"""
-    #pdf.ln(5)
+def add_logo_color_table(pdf, logo_colors=None, process_type='EMBROIDERY', logo_info=None):
+    """Enhanced logo color table with different layouts for embroidery vs heat transfer"""
+    if process_type == 'HEAT_TRANSFER':
+        add_heat_transfer_logo_table(pdf, logo_colors, logo_info)
+    else:
+        add_embroidery_logo_table(pdf, logo_colors)
+
+def add_embroidery_logo_table(pdf, logo_colors=None):
+    """Original embroidery logo color table layout (your existing code)"""
     # Use the same usable_width as other tables for consistent right margin
     usable_width = 190 - (2 * 0.8)  # Same calculation as in main function
     logo_color_width = usable_width * 0.20
@@ -492,6 +659,67 @@ def add_logo_color_table(pdf, logo_colors=None):
     pdf.cell(value_width, 5, color8_display, border=1)
     pdf.cell(number_width + value_width, 5, "", border=1)
     pdf.ln()
+
+def add_heat_transfer_logo_table(pdf, logo_colors=None, logo_info=None):
+    """Heat transfer logo color table with PRODUCTION DAY on left and logo fields on right"""
+    # Use the same usable_width as other tables for consistency
+    usable_width = 190 - (2 * 0.8)  # Same calculation as in main function
+    
+    # Table dimensions
+    production_day_width = usable_width * 0.25
+    gap_width = 3  # 3mm gap
+    logo_table_width = usable_width - production_day_width - gap_width
+    
+    # Calculate total height to match the logo color table (6 rows * 5 = 30)
+    total_table_height = 30
+    
+    # Get current position
+    current_x = pdf.get_x()
+    current_y = pdf.get_y()
+    
+    # Draw the PRODUCTION DAY table on the left with complete border (same height as logo table)
+    pdf.set_font("Arial", "B", 8.5)
+    # Draw the complete border for the entire PRODUCTION DAY table area
+    pdf.rect(current_x, current_y, production_day_width, total_table_height)
+    # Add the PRODUCTION DAY text at the top of the bordered area
+    pdf.set_xy(current_x, current_y + 1)
+    pdf.cell(production_day_width, 3, "PRODUCTION DAY:", align="C")
+    # The rest of the area remains empty but bordered
+    
+    # Draw the logo color table on the right
+    logo_table_x = current_x + production_day_width + gap_width
+    pdf.set_xy(logo_table_x, current_y)
+    
+    # Get heat transfer data
+    heat_transfer_data = logo_info.get('heat_transfer', {}) if logo_info else {}
+    
+    # Define the fields and their values
+    fields = [
+        ("LOGO COLOR:", heat_transfer_data.get('logo_color', '')),
+        ("MATERIAL:", heat_transfer_data.get('material', '')),
+        ("TEMP:", heat_transfer_data.get('temp', '')),
+        ("TIME:", heat_transfer_data.get('time', '')),
+        ("PRESSURE:", heat_transfer_data.get('pressure', '')),
+        ("PEEL:", heat_transfer_data.get('peel', ''))
+    ]
+    
+    row_height = 5
+    pdf.set_font("Arial", "B", 8.5)
+    
+    # Draw each field row
+    for i, (field_name, field_value) in enumerate(fields):
+        row_y = current_y + (i * row_height)
+        pdf.set_xy(logo_table_x, row_y)
+        
+        # Field name (left part)
+        field_width = logo_table_width * 0.4
+        value_width = logo_table_width * 0.6
+        
+        pdf.cell(field_width, row_height, field_name, border=1, align="L")
+        pdf.cell(value_width, row_height, str(field_value), border=1, align="L")
+    
+    # Move cursor to next line
+    pdf.set_xy(current_x, current_y + total_table_height + 2)
 
 def apply_max_size_constraint(width_mm, height_mm, max_width=91.9, max_height=58.1):
     """Apply maximum size constraint while preserving aspect ratio"""
@@ -895,26 +1123,10 @@ def validate_row_for_processing(row, report_data, approval_filter="approved_only
         report_data.append(row_data)
         return False, f'Invalid Logo SKU: "{logo_sku_str}"'
     
-    # Validation 3: Check if logo info exists in database
-    logo_info = get_logo_info(logo_sku_str)
-    if logo_info is None:
-        row_data['Execution Status'] = 'FAILED'
-        row_data['Error Message'] = f'Logo info not found in database for SKU: {logo_sku_str}'
-        report_data.append(row_data)
-        return False, f'Logo info not found in database for SKU: {logo_sku_str}'
-    
-    # Validation 4: Check if logo images exist
-    logo_images = find_logo_images_by_sku(logo_sku_str)
-    if not logo_images:
-        row_data['Execution Status'] = 'FAILED'
-        row_data['Error Message'] = f'Logo images not found for SKU: {logo_sku_str}'
-        report_data.append(row_data)
-        return False, f'Logo images not found for SKU: {logo_sku_str}'
-    
-    # Validation 5: Check Operational Code validity
+    # Validation 3: Parse Operational Code FIRST (before using it)
     operational_code = None
     op_code_raw = row.get("OPERATIONAL CODE")
-    
+
     if pd.notna(op_code_raw) and str(op_code_raw).strip():
         op_code_str = str(op_code_raw).strip()
         
@@ -939,7 +1151,67 @@ def validate_row_for_processing(row, report_data, approval_filter="approved_only
         row_data['Error Message'] = 'Missing or empty Operational Code'
         report_data.append(row_data)
         return False, "Missing or empty Operational Code"
-    
+
+    # Validation 4: Check if logo info exists in database with process type validation
+    # Determine expected process type from operational code (now that we have it)
+    expected_process_type = None
+    if operational_code == 11:
+        expected_process_type = 'EMBROIDERY'
+    elif operational_code == 20:
+        expected_process_type = 'HEAT_TRANSFER'
+    elif operational_code and operational_code > 89:
+        # For complex operations, determine from List of Operation Codes
+        list_operation_codes = []
+        list_codes_raw = row.get("List of Operation Codes")
+        
+        if pd.notna(list_codes_raw) and str(list_codes_raw).strip():
+            list_codes_str = str(list_codes_raw).strip()
+            
+            # Parse comma-separated codes
+            if ',' in list_codes_str:
+                individual_codes = list_codes_str.split(',')
+                for individual_code in individual_codes:
+                    clean_code = individual_code.strip()
+                    if clean_code and clean_code.replace('.', '').isdigit():
+                        try:
+                            if '.' in clean_code:
+                                list_operation_codes.append(int(float(clean_code)))
+                            else:
+                                list_operation_codes.append(int(clean_code))
+                        except (ValueError, TypeError):
+                            pass
+            else:
+                # Single code
+                if list_codes_str.replace('.', '').isdigit():
+                    try:
+                        if '.' in list_codes_str:
+                            list_operation_codes.append(int(float(list_codes_str)))
+                        else:
+                            list_operation_codes.append(int(list_codes_str))
+                    except (ValueError, TypeError):
+                        pass
+        
+        # Determine process type from list
+        if 11 in list_operation_codes:
+            expected_process_type = 'EMBROIDERY'
+        elif 20 in list_operation_codes:
+            expected_process_type = 'HEAT_TRANSFER'
+
+    logo_info, error_message = get_logo_info(logo_sku_str, expected_process_type)
+    if logo_info is None:
+        row_data['Execution Status'] = 'FAILED'
+        row_data['Error Message'] = error_message or f'Logo info validation failed for SKU: {logo_sku_str}'
+        report_data.append(row_data)
+        return False, error_message or f'Logo info validation failed for SKU: {logo_sku_str}'
+
+    # Validation 5: Check if logo images exist
+    logo_images = find_logo_images_by_sku(logo_sku_str)
+    if not logo_images:
+        row_data['Execution Status'] = 'FAILED'
+        row_data['Error Message'] = f'Logo images not found for SKU: {logo_sku_str}'
+        report_data.append(row_data)
+        return False, f'Logo images not found for SKU: {logo_sku_str}'
+
     # Validation 6: Check Operational Code conditions (Updated with Heat Transfer support)
     if operational_code == 11:
         # Valid - Operational Code is 11 (Embroidery)
@@ -1531,7 +1803,18 @@ def process_file_with_progress(file_path, sales_order_filter, session_id, approv
                     pdf.ln(5)
 
                     # Enhanced logo section with database lookup and multi-line support
-                    logo_info = get_logo_info(str(logo_sku).strip())
+                    process_type = get_process_type_for_group(group)
+                    logo_info, error_message = get_logo_info(str(logo_sku).strip(), process_type)
+                    if logo_info is None:
+                        print(f"Error: Logo info validation failed for SKU {logo_sku}: {error_message}")
+                        
+                        # Update report status
+                        for idx, row_data in enumerate(report_data):
+                            if row_data['Document Number'] == str(doc_num) and row_data['LOGO'] == str(logo_sku):
+                                report_data[idx]['Execution Status'] = 'FAILED'
+                                report_data[idx]['Error Message'] = error_message or f'Logo info validation failed for SKU: {logo_sku}'
+                        
+                        continue  # Skip this group
                     
                     # Check if logo image exists
                     logo_images = find_logo_images_by_sku(logo_sku)
@@ -1582,9 +1865,9 @@ def process_file_with_progress(file_path, sales_order_filter, session_id, approv
                     # Move to next section
                     pdf.set_xy(notes_x, notes_y + notes_height + 5)                    
 
-                    # Enhanced logo color table with actual colors
+                    # Enhanced logo color table with actual colors (different layout for heat transfer)
                     logo_colors = logo_info['logo_colors'] if logo_info else None
-                    add_logo_color_table(pdf, logo_colors)
+                    add_logo_color_table(pdf, logo_colors, process_type, logo_info)
 
                     pdf.ln(2)
                     pdf.set_font("Arial", "B", 8.5)
