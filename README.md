@@ -16,4 +16,6 @@ Note: Till v7.0 every feature for 1 Logo Embroidery is working fine. the v7.0 is
 
 From v8.0 Heat Transfer Code starts.
 
-the v9.0 has code for full Heat Transfer and is working fine.
+the v9.0 has code for full Heat Transfer and is working fine. It works fine with 1 Logo Embroidery, Heat Transfer.
+
+the main branch has the v9.0 code. 
