@@ -14,10 +14,6 @@ the v7.0 has code for organizing art instructions pdfs by sales order by folder,
 
 Note: Till v7.0 every feature for 1 Logo Embroidery is working fine. the v7.0 is stable code.
 
-the v7.0update has updated code of v7.0 with highlighting the logo color.
+From v8.0 Heat Transfer Code starts.
 
-From v8.0 Heat Transfer Code starts.(later implement the code for highlighting the logo color from v7.0update)
-
-as of now main branch has code of v7.0update, but v7.0 is stable code which has every feature for 1 Logo Embroidery and is working fine.
-
-the v9.0 has code for full Heat Transfer, need to add code for highlighting logo color if it is specific value.
+the v9.0 has code for full Heat Transfer and is working fine.

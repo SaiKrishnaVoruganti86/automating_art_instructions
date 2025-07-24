@@ -582,7 +582,7 @@ def add_logo_color_table(pdf, logo_colors=None, process_type='EMBROIDERY', logo_
         add_embroidery_logo_table(pdf, logo_colors)
 
 def add_embroidery_logo_table(pdf, logo_colors=None):
-    """Original embroidery logo color table layout (your existing code)"""
+    """Original embroidery logo color table layout with TONE ON TONE highlighting"""
     # Use the same usable_width as other tables for consistent right margin
     usable_width = 190 - (2 * 0.8)  # Same calculation as in main function
     logo_color_width = usable_width * 0.20
@@ -598,13 +598,27 @@ def add_embroidery_logo_table(pdf, logo_colors=None):
     color1 = logo_colors[0] if logo_colors and len(logo_colors) > 0 else ""
     color1_display = truncate_text(color1, pdf, value_width * 0.95)
     pdf.cell(number_width, 5, "1", border=1, align="C")
-    pdf.cell(value_width, 5, color1_display, border=1)
+    
+    # Check if color1 is "TONE ON TONE" for highlighting
+    if color1_display.strip().upper() == "TONE ON TONE":
+        pdf.set_fill_color(255, 255, 0)  # Yellow
+        pdf.cell(value_width, 5, color1_display, border=1, fill=True)
+        pdf.set_fill_color(255, 255, 255)  # Reset to white
+    else:
+        pdf.cell(value_width, 5, color1_display, border=1)
     
     # Add ninth color if available (truncated to 95% of cell width)
     color9 = logo_colors[8] if logo_colors and len(logo_colors) > 8 else ""
     color9_display = truncate_text(color9, pdf, value_width * 0.95)
     pdf.cell(number_width, 5, "9", border=1, align="C")
-    pdf.cell(value_width, 5, color9_display, border=1)
+    
+    # Check if color9 is "TONE ON TONE" for highlighting
+    if color9_display.strip().upper() == "TONE ON TONE":
+        pdf.set_fill_color(255, 255, 0)  # Yellow
+        pdf.cell(value_width, 5, color9_display, border=1, fill=True)
+        pdf.set_fill_color(255, 255, 255)  # Reset to white
+    else:
+        pdf.cell(value_width, 5, color9_display, border=1)
     pdf.ln()
 
     # Second row: PRODUCTION DAY directly under LOGO COLOR
@@ -617,10 +631,26 @@ def add_embroidery_logo_table(pdf, logo_colors=None):
     color2_display = truncate_text(color2, pdf, value_width * 0.95)
     color10 = logo_colors[9] if logo_colors and len(logo_colors) > 9 else ""
     color10_display = truncate_text(color10, pdf, value_width * 0.95)
+    
     pdf.cell(number_width, 5, "2", border=1, align="C")
-    pdf.cell(value_width, 5, color2_display, border=1)
+    
+    # Check if color2 is "TONE ON TONE" for highlighting
+    if color2_display.strip().upper() == "TONE ON TONE":
+        pdf.set_fill_color(255, 255, 0)  # Yellow
+        pdf.cell(value_width, 5, color2_display, border=1, fill=True)
+        pdf.set_fill_color(255, 255, 255)  # Reset to white
+    else:
+        pdf.cell(value_width, 5, color2_display, border=1)
+    
     pdf.cell(number_width, 5, "10", border=1, align="C")
-    pdf.cell(value_width, 5, color10_display, border=1)
+    
+    # Check if color10 is "TONE ON TONE" for highlighting
+    if color10_display.strip().upper() == "TONE ON TONE":
+        pdf.set_fill_color(255, 255, 0)  # Yellow
+        pdf.cell(value_width, 5, color10_display, border=1, fill=True)
+        pdf.set_fill_color(255, 255, 255)  # Reset to white
+    else:
+        pdf.cell(value_width, 5, color10_display, border=1)
     pdf.ln()
 
     # Calculate the height of the merged cell (6 rows * 5 units = 30 units)
@@ -646,17 +676,42 @@ def add_embroidery_logo_table(pdf, logo_colors=None):
         color_right_display = truncate_text(color_right, pdf, value_width * 0.95)
         
         pdf.cell(number_width, 5, str(i), border=1, align="C")
-        pdf.cell(value_width, 5, color_left_display, border=1)
+        
+        # Check if left color is "TONE ON TONE" for highlighting
+        if color_left_display.strip().upper() == "TONE ON TONE":
+            pdf.set_fill_color(255, 255, 0)  # Yellow
+            pdf.cell(value_width, 5, color_left_display, border=1, fill=True)
+            pdf.set_fill_color(255, 255, 255)  # Reset to white
+        else:
+            pdf.cell(value_width, 5, color_left_display, border=1)
+        
         pdf.cell(number_width, 5, str(i + 8), border=1, align="C")
-        pdf.cell(value_width, 5, color_right_display, border=1)
+        
+        # Check if right color is "TONE ON TONE" for highlighting
+        if color_right_display.strip().upper() == "TONE ON TONE":
+            pdf.set_fill_color(255, 255, 0)  # Yellow
+            pdf.cell(value_width, 5, color_right_display, border=1, fill=True)
+            pdf.set_fill_color(255, 255, 255)  # Reset to white
+        else:
+            pdf.cell(value_width, 5, color_right_display, border=1)
+        
         # Move to next line, but stay at the same x position (after the merged cell)
         pdf.set_xy(current_x + logo_color_width, pdf.get_y() + 5)
 
     # Last row with only left half filled (number 8), right half blank
     color8 = logo_colors[7] if logo_colors and len(logo_colors) > 7 else ""
     color8_display = truncate_text(color8, pdf, value_width * 0.95)
+    
     pdf.cell(number_width, 5, "8", border=1, align="C")
-    pdf.cell(value_width, 5, color8_display, border=1)
+    
+    # Check if color8 is "TONE ON TONE" for highlighting
+    if color8_display.strip().upper() == "TONE ON TONE":
+        pdf.set_fill_color(255, 255, 0)  # Yellow
+        pdf.cell(value_width, 5, color8_display, border=1, fill=True)
+        pdf.set_fill_color(255, 255, 255)  # Reset to white
+    else:
+        pdf.cell(value_width, 5, color8_display, border=1)
+    
     pdf.cell(number_width + value_width, 5, "", border=1)
     pdf.ln()
 
@@ -1603,7 +1658,7 @@ def process_file_with_progress(file_path, sales_order_filter, session_id, approv
             for group_index, ((doc_num, logo_sku), group) in enumerate(grouped):
                 # Update progress for each PDF
                 process_type = get_process_type_for_group(group)
-                pdf_progress = 60 + (group_index / total_groups) * 20  # PDF generation takes 20% (60-80%)
+                pdf_progress = 60 + (group_index / total_groups) * 20  # PDF generation takes 20% (60-80%)0
                 update_progress(session_id, 'processing', pdf_progress, 
                               f'Generating PDF {group_index + 1} of {total_groups} (SO: {doc_num}, Logo: {logo_sku})', 
                               'PDF Generation', 8)
